@@ -12,11 +12,10 @@ PyPDF2
 pdfplumber
 python-docx
 reportlab
-sentence-transformers
-faiss-cpu
-easyocr
+
 pytesseract
 httpx
 numpy
 Pillow
 supabase
+psycopg2-binary
