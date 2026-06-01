@@ -3,11 +3,14 @@ import 'package:flutter/foundation.dart';
 enum AppFlavor { development, staging, production }
 
 class AppConfig {
-  static const String flavor = String.fromEnvironment('FLAVOR', defaultValue: 'development');
-  // Android Emulator → 10.0.2.2 (reaches host machine localhost)
-  // Real device on same WiFi → use your machine's LAN IP (e.g. 192.168.x.x)
-  static const String apiHost = String.fromEnvironment('API_HOST', defaultValue: '10.0.2.2');
-  static const String prodApiHost = String.fromEnvironment('PROD_API_HOST', defaultValue: 'api.lexguard.ai');
+  // -----------------------------------------------------------------------
+  // Render production backend — all environments point here.
+  // To restore local dev: change _kRenderBaseUrl to 'http://10.0.2.2:8000/api/v1'
+  // -----------------------------------------------------------------------
+  static const String _kRenderBaseUrl = 'https://pdd-uw63.onrender.com/api/v1';
+
+  static const String flavor =
+      String.fromEnvironment('FLAVOR', defaultValue: 'development');
 
   static AppFlavor get environment {
     switch (flavor.toLowerCase()) {
@@ -23,18 +26,7 @@ class AppConfig {
   static bool get isProduction => environment == AppFlavor.production;
 
   static String get apiBaseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8001/api/v1';
-    }
-
-    switch (environment) {
-      case AppFlavor.production:
-        return 'https://$prodApiHost/api/v1';
-      case AppFlavor.staging:
-        return 'https://$apiHost/api/v1';
-      case AppFlavor.development:
-      default:
-        return 'http://$apiHost:8001/api/v1';
-    }
+    debugPrint('[AppConfig] apiBaseUrl -> $_kRenderBaseUrl');
+    return _kRenderBaseUrl;
   }
-}
+}

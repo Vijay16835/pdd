@@ -9,41 +9,25 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # Initialize Firebase Admin SDK
+cred_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+if not cred_path:
+    logger.error("FIREBASE_CREDENTIALS_PATH environment variable is missing!")
+    raise RuntimeError("FIREBASE_CREDENTIALS_PATH environment variable is missing!")
+
+if not os.path.exists(cred_path):
+    logger.error(f"Firebase credentials file not found at path: {cred_path}")
+    raise FileNotFoundError(f"Firebase credentials file not found at path: {cred_path}")
+
 try:
+    cred = credentials.Certificate(cred_path)
     if not firebase_admin._apps:
-        # Check if credentials file path exists in env
-        cred_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
-        if cred_path and os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
-            firebase_admin.initialize_app(cred, {
-                'storageBucket': bucket_name
-            })
-            logger.info("Firebase initialized with credentials file.")
-        else:
-            # Fallback to local mock initialization to prevent startup crashes when cert isn't configured yet
-            try:
-                firebase_admin.initialize_app()
-                logger.info("Firebase initialized with default credentials.")
-            except Exception as e:
-                logger.warning(f"Could not initialize Firebase via default credentials: {e}. Falling back to mock configuration.")
-                mock_cred = credentials.Certificate({
-                    "type": "service_account",
-                    "project_id": "mock-lexguard-ai",
-                    "private_key_id": "mockkeyid123",
-                    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDh4d3K\n-----END PRIVATE KEY-----\n",
-                    "client_email": "firebase-adminsdk-mock@mock-lexguard-ai.iam.gserviceaccount.com",
-                    "client_id": "1234567890",
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-mock%40mock-lexguard-ai.iam.gserviceaccount.com"
-                })
-                firebase_admin.initialize_app(mock_cred, {
-                    'storageBucket': 'mock-lexguard-ai.appspot.com'
-                })
+        bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
+        options = {'storageBucket': bucket_name} if bucket_name else {}
+        firebase_admin.initialize_app(cred, options)
+        logger.info("Firebase initialized with credentials file.")
 except Exception as e:
     logger.error(f"Error during Firebase initialization: {e}")
+    raise e
 
 
 class FirebaseService:

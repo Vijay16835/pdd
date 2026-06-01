@@ -11,12 +11,36 @@ class ApiService {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
-        sendTimeout: const Duration(seconds: 15),
+        // Render free-tier cold starts can take 30–50 s — timeouts must exceed that.
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+        sendTimeout: const Duration(seconds: 60),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+        },
+      ),
+    );
+
+    // ── Debug: log every outgoing request URL ──────────────────────────────
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          debugPrint('[ApiService] --> ${options.method} ${options.uri}');
+          return handler.next(options);
+        },
+        onResponse: (response, handler) {
+          debugPrint(
+            '[ApiService] <-- ${response.statusCode} ${response.requestOptions.uri}',
+          );
+          return handler.next(response);
+        },
+        onError: (DioException e, handler) {
+          debugPrint(
+            '[ApiService] ERR ${e.response?.statusCode ?? e.type} '
+            '${e.requestOptions.uri}',
+          );
+          return handler.next(e);
         },
       ),
     );
@@ -31,18 +55,17 @@ class ApiService {
         compact: true,
       ));
     }
-    
-    // Retry Interceptor for connection errors
+
+    // ── Retry on transient network errors ─────────────────────────────────
     _dio.interceptors.add(
       InterceptorsWrapper(
         onError: (DioException e, handler) async {
           if (_shouldRetry(e)) {
             try {
-              // Attempt to retry after a short delay
               await Future.delayed(const Duration(seconds: 2));
               final response = await _dio.fetch(e.requestOptions);
               return handler.resolve(response);
-            } catch (retryError) {
+            } catch (_) {
               return handler.next(e);
             }
           }
@@ -51,23 +74,23 @@ class ApiService {
       ),
     );
 
+    // ── JWT injection ──────────────────────────────────────────────────────
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           const storage = FlutterSecureStorage();
           final token = await storage.read(key: 'auth_token');
           if (token != null) {
-            debugPrint('Injecting JWT Token into request: ${options.path}');
+            debugPrint('[ApiService] JWT injected for: ${options.uri}');
             options.headers['Authorization'] = 'Bearer $token';
           } else {
-            debugPrint('No JWT token found for request: ${options.path}');
+            debugPrint('[ApiService] No JWT for: ${options.uri}');
           }
           return handler.next(options);
         },
         onError: (DioException e, handler) {
           if (e.response?.statusCode == 401) {
-            debugPrint('Unauthorized! Token expired or invalid.');
-            // Implement global refresh logic or force logout here
+            debugPrint('[ApiService] 401 Unauthorized: ${e.requestOptions.uri}');
           }
           return handler.next(e);
         },
