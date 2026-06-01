@@ -63,6 +63,7 @@ oracleJdk-26/
 
 # Backend uploads, db, and secrets
 backend/firebase_credentials.json
+firebase_credentials.json
 backend/uploads/
 backend/vector_db/
 *.pdf
