@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     SMTP_EMAIL: str = ""
     SMTP_PASSWORD: str = ""
-    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_SERVER: str = ""
     SMTP_PORT: int = 587
     EMAIL_FROM: str = ""
     

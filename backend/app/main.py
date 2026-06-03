@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, documents, user, ai, notifications, chat, multilingual
 from app.core.config import settings
@@ -44,6 +44,48 @@ app.add_middleware(
 )
 
 # Include Routers
+debug_router = APIRouter()
+
+@debug_router.post("/test-email")
+async def test_email_endpoint(recipient: str = None):
+    from app.services.email_service import email_service
+    import smtplib
+    import socket
+    
+    if not recipient:
+        recipient = settings.SMTP_EMAIL
+        
+    if not recipient:
+        raise HTTPException(
+            status_code=400,
+            detail="No recipient email provided, and SMTP_EMAIL settings key is empty."
+        )
+        
+    logger.info(f"[Debug API] test-email called. Target recipient: {recipient}")
+    
+    try:
+        res = email_service.run_smtp_diagnostics(recipient)
+        return res
+    except Exception as e:
+        logger.error(f"[Debug API] SMTP Connection / Diagnostic Failure: {type(e).__name__}: {str(e)}", exc_info=True)
+        
+        if isinstance(e, socket.gaierror):
+            detail = f"DNS failure: Could not resolve SMTP server. Details: {str(e)}"
+        elif isinstance(e, (socket.timeout, TimeoutError)):
+            detail = f"Network timeout: Connection to SMTP server timed out. Details: {str(e)}"
+        elif isinstance(e, smtplib.SMTPAuthenticationError):
+            detail = f"SMTP Authentication Failure (Code {e.smtp_code}): {e.smtp_error.decode() if isinstance(e.smtp_error, bytes) else str(e.smtp_error)}"
+        elif isinstance(e, (smtplib.SMTPSenderRefused, smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError)):
+            detail = f"SMTP Rejection Failure: {str(e)}"
+        else:
+            detail = f"Diagnostic Failure: {type(e).__name__}: {str(e)}"
+            
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail
+        )
+
+app.include_router(debug_router, prefix=f"{settings.API_V1_STR}/debug", tags=["debug"])
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["authentication"])
 app.include_router(documents.router, prefix=f"{settings.API_V1_STR}/documents", tags=["documents"])
 app.include_router(user.router, prefix=f"{settings.API_V1_STR}/user", tags=["user"])
