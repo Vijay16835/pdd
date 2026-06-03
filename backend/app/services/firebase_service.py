@@ -67,9 +67,39 @@ def _get_pg_pool():
     if _pg_pool is None:
         try:
             import psycopg2.pool
+            import urllib.parse
             db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
             if "Tvijay@1098" in db_url:
                 db_url = db_url.replace("Tvijay@1098", "Tvijay%401098")
+            
+            # Auto-migrate direct connection to pooler connection string if needed
+            try:
+                parsed = urllib.parse.urlparse(db_url)
+                if parsed.hostname and parsed.hostname.endswith(".supabase.co"):
+                    logger.info(f"[Database Service] Direct Supabase connection detected: {parsed.hostname}. Migrating to pooler connection string...")
+                    project_id = parsed.hostname.replace("db.", "").replace(".supabase.co", "")
+                    region = "ap-south-1"  # Region based on configuration
+                    pooler_host = f"aws-1-{region}.pooler.supabase.com"
+                    pooler_port = 6543
+                    
+                    username = parsed.username
+                    if username and not username.endswith(f".{project_id}"):
+                        username = f"{username}.{project_id}"
+                        
+                    password = parsed.password or ""
+                    netloc = f"{username}:{password}@{pooler_host}:{pooler_port}"
+                    db_url = urllib.parse.urlunparse((
+                        parsed.scheme,
+                        netloc,
+                        parsed.path,
+                        parsed.params,
+                        parsed.query,
+                        parsed.fragment
+                    ))
+                    logger.info(f"[Database Service] Migrated DATABASE_URL to pooler format: postgresql://{username}:****@{pooler_host}:{pooler_port}{parsed.path}")
+            except Exception as parse_err:
+                logger.warning(f"[Database Service] Failed to parse/migrate DATABASE_URL: {parse_err}")
+                
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(2, 10, dsn=db_url)
             logger.info("psycopg2 ThreadedConnectionPool initialised (min=2, max=10).")
         except Exception as e:

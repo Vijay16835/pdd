@@ -53,37 +53,54 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     final auth = context.read<AuthProvider>();
-    debugPrint('Calling auth.signUp...');
-    final success = await auth.signUp(
-        _nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text);
-
-    if (!mounted) return;
-
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('OTP sent to your email!',
-              style: GoogleFonts.inter(color: Colors.white)),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    debugPrint('Request started');
+    try {
+      final success = await auth.signUp(
+          _nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text);
+      debugPrint('Response received');
       
-      // Navigate to OTP Screen
-      Navigator.pushNamed(
-        context, 
-        '/otp-verification', 
-        arguments: {'email': _emailCtrl.text.trim(), 'purpose': 'registration'}
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? 'Signup failed',
-              style: GoogleFonts.inter(color: Colors.white)),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('OTP sent to your email!',
+                style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // Navigate to OTP Screen
+        Navigator.pushNamed(
+          context, 
+          '/otp-verification', 
+          arguments: {'email': _emailCtrl.text.trim(), 'purpose': 'registration'}
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Signup failed',
+                style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Signup failed due to a network or server error.',
+                style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      debugPrint('Loading closed');
     }
   }
 

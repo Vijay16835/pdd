@@ -30,21 +30,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     final email = _emailCtrl.text.trim();
-    debugPrint('[FORGOT_PASSWORD] Request started');
+    debugPrint('Request started');
     
     try {
       final auth = context.read<AuthProvider>();
       
-      // Perform authentication check with 30s maximum timeout
+      // Perform authentication check with 10s maximum timeout
       final success = await auth.sendResetOtp(email).timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 10),
         onTimeout: () {
           debugPrint('[FORGOT_PASSWORD] Timeout exceeded');
           throw TimeoutException('Connection timed out. The server is taking too long to respond.');
         },
       );
       
-      debugPrint('[FORGOT_PASSWORD] Response received');
+      debugPrint('Response received');
 
       if (success) {
         debugPrint('[FORGOT_PASSWORD] Success');
@@ -84,7 +84,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         }
       }
     } catch (e) {
-      debugPrint('[FORGOT_PASSWORD] Exception: $e');
+      debugPrint('Exception thrown');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -105,6 +105,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           _isLoading = false;
         });
       }
+      debugPrint('Loading closed');
     }
   }
 

@@ -36,24 +36,43 @@ class _LoginScreenState extends State<LoginScreen> {
     debugPrint('[LoginScreen] Attempting login for ${_emailCtrl.text.trim()}');
 
     final auth = context.read<AuthProvider>();
-    final success = await auth.login(_emailCtrl.text.trim(), _passCtrl.text);
     
-    if (!mounted) return;
+    debugPrint('Request started');
+    try {
+      final success = await auth.login(_emailCtrl.text.trim(), _passCtrl.text);
+      debugPrint('Response received');
+      
+      if (!mounted) return;
 
-    if (success) {
-      debugPrint('[LoginScreen] Login successful, navigating to /home');
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      debugPrint('[LoginScreen] Login failed: ${auth.errorMessage}');
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? 'Login failed. Please check your connection.',
-              style: GoogleFonts.inter(color: Colors.white)),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (success) {
+        debugPrint('[LoginScreen] Login successful, navigating to /home');
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        debugPrint('[LoginScreen] Login failed: ${auth.errorMessage}');
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Login failed. Please check your connection.',
+                style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login failed due to a network or server error.',
+                style: GoogleFonts.inter(color: Colors.white)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      debugPrint('Loading closed');
     }
   }
 
@@ -307,23 +326,31 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: OutlinedButton.icon(
                         onPressed: () async {
                           final auth = context.read<AuthProvider>();
-                          final success = await auth.googleSignIn();
-                          if (!context.mounted) return;
-                          if (success) {
-                            Navigator.pushReplacementNamed(context, '/home');
-                          } else {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  auth.errorMessage ??
-                                      'Google Sign-In failed. Please try again.',
-                                  style: GoogleFonts.inter(color: Colors.white),
+                          debugPrint('Request started');
+                          try {
+                            final success = await auth.googleSignIn();
+                            debugPrint('Response received');
+                            if (!context.mounted) return;
+                            if (success) {
+                              Navigator.pushReplacementNamed(context, '/home');
+                            } else {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    auth.errorMessage ??
+                                        'Google Sign-In failed. Please try again.',
+                                    style: GoogleFonts.inter(color: Colors.white),
+                                  ),
+                                  backgroundColor: AppColors.error,
+                                  behavior: SnackBarBehavior.floating,
                                 ),
-                                backgroundColor: AppColors.error,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
+                              );
+                            }
+                          } catch (e) {
+                            debugPrint('Exception thrown');
+                          } finally {
+                            debugPrint('Loading closed');
                           }
                         },
                         style: OutlinedButton.styleFrom(

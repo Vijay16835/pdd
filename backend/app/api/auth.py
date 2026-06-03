@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import UserCreate, UserLogin, Token, OTPVerify, ForgotPassword, ResetPassword, GoogleAuth, SendOTP, ChangePassword
@@ -284,11 +284,30 @@ async def send_otp(data: SendOTP, db = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal server error while resending OTP: {str(e)}")
 
 
-@router.post("/send-reset-otp")
-async def send_reset_otp(data: ForgotPassword, db = Depends(get_db)):
-    email = data.email.lower().strip()
-    logger.info(f"[SEND_RESET_OTP] Request received")
+def send_email_in_background(email: str, otp_code: str):
+    import time
+    start_time = time.time()
+    logger.info(f"[Background Task] Email sending started for '{email}'")
     try:
+        email_sent = email_service.send_password_reset_email(email, otp_code)
+        duration = time.time() - start_time
+        if email_sent:
+            logger.info(f"[Background Task] Email sent successfully to '{email}' in {duration:.4f} seconds")
+        else:
+            logger.error(f"[Background Task] Failed to send email to '{email}' in {duration:.4f} seconds")
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"[Background Task] Exception during email sending to '{email}' after {duration:.4f} seconds: {str(e)}", exc_info=True)
+
+
+@router.post("/send-reset-otp")
+async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks, db = Depends(get_db)):
+    import time
+    start_time = time.time()
+    email = data.email.lower().strip()
+    logger.info(f"[SEND_RESET_OTP] Request received for {email}")
+    
+    async def process_request():
         user_data = db.get_user_by_email(email)
         if not user_data:
             logger.warning(f"[SEND_RESET_OTP] Email validation failed: No account found with email '{email}'")
@@ -311,32 +330,31 @@ async def send_reset_otp(data: ForgotPassword, db = Depends(get_db)):
             logger.error(f"[SEND_RESET_OTP] Database save failure: db.save_otp returned False for '{email}'")
             raise HTTPException(status_code=500, detail="Failed to save password reset code to database.")
         
-        logger.info(f"[SEND_RESET_OTP] Email sending started")
-        email_sent = await asyncio.to_thread(email_service.send_password_reset_email, email, otp_code)
-        if not email_sent:
-            raise Exception("Failed to send reset email (email_sent returned False)")
-            
-        logger.info(f"[SEND_RESET_OTP] Email sent successfully")
-        logger.info(f"[SEND_RESET_OTP] Response returned")
+        logger.info(f"[SEND_RESET_OTP] Queueing email sending background task for '{email}'")
+        background_tasks.add_task(send_email_in_background, email, otp_code)
         return {"success": True, "message": "Verification code sent to your email."}
+
+    try:
+        # Enforce maximum timeout of 10 seconds
+        res = await asyncio.wait_for(process_request(), timeout=10.0)
+        duration = time.time() - start_time
+        logger.info(f"[SEND_RESET_OTP] Response returned immediately in {duration:.4f} seconds")
+        return res
+    except asyncio.TimeoutError:
+        duration = time.time() - start_time
+        logger.error(f"[SEND_RESET_OTP] Request timed out after {duration:.4f} seconds")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT if hasattr(status, "HTTP_504_GATEWAY_TIMEOUT") else 504,
+            detail="The request timed out. Please try again."
+        )
     except HTTPException as he:
-        logger.error(f"[SEND_RESET_OTP] HTTP Exception: {he.status_code} - {he.detail}")
+        duration = time.time() - start_time
+        logger.error(f"[SEND_RESET_OTP] HTTP Exception in {duration:.4f} seconds: {he.status_code} - {he.detail}")
         raise he
-    except TimeoutError as te:
-        logger.error(f"[SEND_RESET_OTP] Exact exception: {te}")
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Email gateway timeout: {str(te)}. This typically occurs on Render free tier deployments because outbound SMTP ports (25, 465, 587) are blocked."
-        )
-    except RuntimeError as re:
-        logger.error(f"[SEND_RESET_OTP] Exact exception: {re}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Email service error: {str(re)}"
-        )
     except Exception as e:
-        logger.error(f"[SEND_RESET_OTP] Exact exception: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error while sending reset OTP: {str(e)}")
+        duration = time.time() - start_time
+        logger.error(f"[SEND_RESET_OTP] Exception thrown in {duration:.4f} seconds: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error while generating reset OTP: {str(e)}")
 
 
 @router.post("/verify-reset-otp")

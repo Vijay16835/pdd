@@ -245,12 +245,14 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('  photoURL    : $_googlePhotoURL');
       debugPrint('  firebaseUid : $_firebaseUid');
 
+      final String? firebaseIdToken = await firebaseUser.getIdToken();
+
       final result = await _authService.googleAuth(
         firebaseUser.email!,
         firebaseUser.displayName ?? 'Google User',
         firebaseUser.photoURL,
         firebaseUid: firebaseUser.uid,   // ← primary key sent to backend
-        idToken: googleAuth.idToken,
+        idToken: firebaseIdToken ?? googleAuth.idToken!,
       );
 
       if (result['success']) {

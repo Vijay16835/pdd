@@ -72,79 +72,125 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
 
     final auth = context.read<AuthProvider>();
-    bool success;
+    bool success = false;
     
-    if (widget.isPasswordReset) {
-      success = await auth.verifyResetOtp(widget.email, otp);
-    } else {
-      success = await auth.verifyOtp(widget.email, otp);
-    }
-    
-    if (!mounted) return;
-
-    if (success) {
+    debugPrint('Request started');
+    try {
       if (widget.isPasswordReset) {
-        // Navigate to Reset Password Screen (where they enter new password)
-        Navigator.pushReplacementNamed(
-          context, 
-          '/reset-password', 
-          arguments: {'email': widget.email, 'otp': otp}
-        );
+        success = await auth.verifyResetOtp(widget.email, otp);
       } else {
-        // Registration success
+        success = await auth.verifyOtp(widget.email, otp);
+      }
+      debugPrint('Response received');
+      
+      if (!mounted) return;
+
+      if (success) {
+        if (widget.isPasswordReset) {
+          // Navigate to Reset Password Screen (where they enter new password)
+          Navigator.pushReplacementNamed(
+            context, 
+            '/reset-password', 
+            arguments: {'email': widget.email, 'otp': otp}
+          );
+        } else {
+          // Registration success
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account created successfully!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          // Auto-login and go to Dashboard
+          Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+        }
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully!'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Invalid or expired OTP'),
+            backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
           ),
         );
-        // Auto-login and go to Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
       }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? 'Invalid or expired OTP'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred during verification.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      debugPrint('Loading closed');
     }
   }
 
   void _resendOtp() async {
     final auth = context.read<AuthProvider>();
-    bool success;
+    bool success = false;
     
-    if (widget.isPasswordReset) {
-      success = await auth.sendResetOtp(widget.email);
-    } else {
-      success = await auth.sendOtp(widget.email);
-    }
-    
-    if (!mounted) return;
+    debugPrint('Request started');
+    try {
+      if (widget.isPasswordReset) {
+        success = await auth.sendResetOtp(widget.email).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('[OTP_VERIFICATION] Resend timeout exceeded');
+            throw TimeoutException('Connection timed out. The server is taking too long to respond.');
+          },
+        );
+      } else {
+        success = await auth.sendOtp(widget.email).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint('[OTP_VERIFICATION] Resend timeout exceeded');
+            throw TimeoutException('Connection timed out. The server is taking too long to respond.');
+          },
+        );
+      }
+      debugPrint('Response received');
+      
+      if (!mounted) return;
 
-    if (success) {
-      setState(() {
-        _timerSeconds = 60;
-      });
-      _startTimer();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Verification code resent!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? 'Failed to resend code'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (success) {
+        setState(() {
+          _timerSeconds = 60;
+        });
+        _startTimer();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification code resent!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Failed to resend code'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred. Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      debugPrint('Loading closed');
     }
   }
 

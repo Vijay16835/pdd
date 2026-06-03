@@ -60,31 +60,48 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     }
 
     final auth = context.read<AuthProvider>();
-    final success = await auth.resetPassword(
-      _emailCtrl.text.trim(),
-      _token!,
-      _passCtrl.text,
-    );
-
-    if (!mounted) return;
-
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset successful! Please sign in.'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+    debugPrint('Request started');
+    try {
+      final success = await auth.resetPassword(
+        _emailCtrl.text.trim(),
+        _token!,
+        _passCtrl.text,
       );
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? 'Failed to reset password'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      debugPrint('Response received');
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset successful! Please sign in.'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Failed to reset password'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred. Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      debugPrint('Loading closed');
     }
   }
 
