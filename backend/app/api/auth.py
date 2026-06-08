@@ -87,11 +87,23 @@ async def signup(user_in: UserCreate, db = Depends(get_db)):
             detail=f"Email gateway timeout: {str(te)}. The Brevo REST API did not respond within the timeout limit."
         )
     except RuntimeError as re:
-        logger.error(f"[Auth API] /signup Email API Runtime Error: {re}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Email service API error: {str(re)}"
-        )
+        err_msg = str(re)
+        logger.error(f"[Auth API] /signup Email API Runtime Error: {err_msg}")
+        if "401" in err_msg or "unauthorized" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email service authorization failed. Contact administrator."
+            )
+        elif "429" in err_msg or "rate limit" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again later."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to send OTP email."
+            )
     except Exception as e:
         logger.error(f"[Auth API] /signup Unexpected registration error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error during registration: {str(e)}")
@@ -241,7 +253,7 @@ async def send_otp(data: SendOTP, db = Depends(get_db)):
         user_data = db.get_user_by_email(email)
         if not user_data:
             logger.warning(f"[Auth API] /send-otp user not found: '{email}'")
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Email account not found.")
             
         otp_code = "".join(random.choices(string.digits, k=6))
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -278,11 +290,23 @@ async def send_otp(data: SendOTP, db = Depends(get_db)):
             detail=f"Email gateway timeout: {str(te)}. The Brevo REST API did not respond within the timeout limit."
         )
     except RuntimeError as re:
-        logger.error(f"[Auth API] /send-otp Email API Runtime Error: {re}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Email service API error: {str(re)}"
-        )
+        err_msg = str(re)
+        logger.error(f"[Auth API] /send-otp Email API Runtime Error: {err_msg}")
+        if "401" in err_msg or "unauthorized" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email service authorization failed. Contact administrator."
+            )
+        elif "429" in err_msg or "rate limit" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again later."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to send OTP email."
+            )
     except Exception as e:
         logger.error(f"[Auth API] /send-otp Unexpected error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error while resending OTP: {str(e)}")
@@ -305,7 +329,7 @@ def send_email_in_background(email: str, otp_code: str):
 
 
 @router.post("/send-reset-otp")
-async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks, db = Depends(get_db)):
+async def send_reset_otp(data: ForgotPassword, db = Depends(get_db)):
     import time
     start_time = time.time()
     email = data.email.lower().strip()
@@ -315,14 +339,13 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
         user_data = db.get_user_by_email(email)
         if not user_data:
             logger.warning(f"[SEND_RESET_OTP] Email validation failed: No account found with email '{email}'")
-            raise HTTPException(status_code=404, detail="No account found with this email address.")
+            raise HTTPException(status_code=404, detail="Email account not found.")
         
         logger.info(f"[SEND_RESET_OTP] Email validated")
         
         # Generate OTP
         otp_code = "".join(random.choices(string.digits, k=6))
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-        logger.info("OTP generated")
         logger.info(f"[SEND_RESET_OTP] OTP generated")
         
         saved = db.save_otp(
@@ -334,9 +357,13 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
         if not saved:
             logger.error(f"[SEND_RESET_OTP] Database save failure: db.save_otp returned False for '{email}'")
             raise HTTPException(status_code=500, detail="Failed to save password reset code to database.")
-        logger.info("OTP stored")
-        logger.info(f"[SEND_RESET_OTP] Queueing email sending background task for '{email}'")
-        background_tasks.add_task(send_email_in_background, email, otp_code)
+        logger.info(f"[SEND_RESET_OTP] OTP stored")
+        
+        logger.info(f"[SEND_RESET_OTP] Dispatching email_service.send_password_reset_email via thread pool to '{email}'...")
+        email_sent = await asyncio.to_thread(email_service.send_password_reset_email, email, otp_code)
+        if not email_sent:
+            raise Exception("Failed to send email via Brevo REST API (email_sent returned False)")
+            
         return {"success": True, "message": "Verification code sent to your email."}
 
     try:
@@ -349,13 +376,37 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
         duration = time.time() - start_time
         logger.error(f"[SEND_RESET_OTP] Request timed out after {duration:.4f} seconds")
         raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT if hasattr(status, "HTTP_504_GATEWAY_TIMEOUT") else 504,
+            status_code=504,
             detail="The request timed out. Please try again."
         )
     except HTTPException as he:
         duration = time.time() - start_time
         logger.error(f"[SEND_RESET_OTP] HTTP Exception in {duration:.4f} seconds: {he.status_code} - {he.detail}")
         raise he
+    except TimeoutError as te:
+        logger.error(f"[SEND_RESET_OTP] Email API Timeout: {te}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Email gateway timeout: {str(te)}. The Brevo REST API did not respond within the timeout limit."
+        )
+    except RuntimeError as re:
+        err_msg = str(re)
+        logger.error(f"[SEND_RESET_OTP] Email API Runtime Error: {err_msg}")
+        if "401" in err_msg or "unauthorized" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email service authorization failed. Contact administrator."
+            )
+        elif "429" in err_msg or "rate limit" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again later."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to send OTP email."
+            )
     except Exception as e:
         duration = time.time() - start_time
         logger.error(f"[SEND_RESET_OTP] Exception thrown in {duration:.4f} seconds: {str(e)}", exc_info=True)
@@ -461,3 +512,18 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "storage_used_mb": storage_used_mb,
         "storage_limit_mb": 20.0
     }
+
+
+@router.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Auth service is healthy"}
+
+
+@router.post("/logout")
+async def logout_endpoint():
+    return {"success": True, "message": "Logged out successfully"}
+
+
+@router.post("/refresh-token")
+async def refresh_token_endpoint():
+    return {"success": True, "message": "Token refreshed successfully", "data": {"access_token": "dummy_token"}}

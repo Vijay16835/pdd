@@ -331,6 +331,38 @@ class FirebaseService:
             updates["updated_at"] = datetime.now(timezone.utc).isoformat()
             self.db.collection("users").document(user_id).update(updates)
             
+            # Update PostgreSQL for dual-write consistency
+            try:
+                conn = self._get_pg_conn()
+                if conn:
+                    cur = conn.cursor()
+                    set_clauses = []
+                    params = []
+                    mapping = {
+                        "full_name": "full_name",
+                        "email": "email",
+                        "is_verified": "is_verified",
+                        "hashed_password": "hashed_password",
+                        "auth_provider": "auth_provider",
+                        "profile_image": "profile_image"
+                    }
+                    for k, v in updates.items():
+                        if k in mapping:
+                            set_clauses.append(f"{mapping[k]} = %s")
+                            params.append(v)
+                    if set_clauses:
+                        set_clauses.append("updated_at = %s")
+                        params.append(datetime.now(timezone.utc))
+                        params.append(user_id)
+                        query = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = %s"
+                        cur.execute(query, tuple(params))
+                        conn.commit()
+                        logger.info(f"Successfully dual-written user update for {user_id} to Supabase PostgreSQL")
+                    cur.close()
+                    conn.close()
+            except Exception as pg_err:
+                logger.error(f"Failed to update user {user_id} in PostgreSQL: {pg_err}")
+            
             # If full_name or email is updated, reflect in Firebase Auth if available
             try:
                 auth_updates = {}

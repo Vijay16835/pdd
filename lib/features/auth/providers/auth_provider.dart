@@ -83,7 +83,7 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       print('[AuthProvider] Exception in login: $e');
-      _errorMessage = 'Connection error. Please check your internet.';
+      _errorMessage = e.toString();
       return false;
     } finally {
       if (!isSuccess) {
@@ -119,7 +119,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (e, stack) {
       debugPrint('AuthProvider: Signup exception: $e');
       debugPrint('AuthProvider: Stack trace: $stack');
-      _errorMessage = 'Signup failed due to a network or server error.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -149,7 +149,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (e, stack) {
       debugPrint('AuthProvider: Send OTP exception: $e');
       debugPrint('AuthProvider: Stack trace: $stack');
-      _errorMessage = 'Failed to send OTP. Please check your connection.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -183,7 +183,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = 'Verification failed. Please try again.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -348,7 +348,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = 'Request failed. Please check your connection.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -372,7 +372,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = 'Verification failed.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -400,7 +400,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = 'Reset failed. Please try again.';
+      _errorMessage = e.toString();
       _authState = AuthState.unauthenticated;
       notifyListeners();
       return false;
@@ -458,7 +458,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _errorMessage = 'Failed to change password.';
+      _errorMessage = e.toString();
       _authState = AuthState.authenticated;
       notifyListeners();
       return false;
@@ -552,24 +552,30 @@ class AuthProvider extends ChangeNotifier {
           _authState = AuthState.authenticated;
           debugPrint('AuthProvider: Token verified, user loaded: ${_user?.name}');
         } else {
-          debugPrint('AuthProvider: Token verification failed: ${result['message']}');
-          if (refreshToken != null) {
-            // Attempt to refresh token
-            final refreshResult = await _authService.refreshToken(refreshToken);
-            if (refreshResult['success']) {
-              await storage.write(key: 'auth_token', value: refreshResult['data']['access_token']);
-              final newResult = await _authService.getMe();
-              if (newResult['success']) {
-                _user = UserModel.fromJson(newResult['data']);
-                _authState = AuthState.authenticated;
-              } else {
-                logout();
+          final message = result['message']?.toString() ?? '';
+          debugPrint('AuthProvider: Token verification failed: $message');
+          final isAuthError = message.contains('401') || message.contains('403') || message.contains('credentials') || message.contains('Unauthorized');
+          
+          if (isAuthError) {
+            if (refreshToken != null) {
+              // Attempt to refresh token
+              final refreshResult = await _authService.refreshToken(refreshToken);
+              if (refreshResult['success']) {
+                await storage.write(key: 'auth_token', value: refreshResult['data']['access_token']);
+                final newResult = await _authService.getMe();
+                if (newResult['success']) {
+                  _user = UserModel.fromJson(newResult['data']);
+                  _authState = AuthState.authenticated;
+                  notifyListeners();
+                  return;
+                }
               }
-            } else {
-              logout();
             }
-          } else {
             logout();
+          } else {
+            // Transient network/server error: do NOT log out or delete tokens
+            _authState = AuthState.unauthenticated;
+            _errorMessage = "Server is unreachable. Operating in offline mode.";
           }
         }
       } else {

@@ -13,6 +13,10 @@ class BrevoEmailService:
         provider = (os.getenv("EMAIL_PROVIDER") or getattr(settings, "EMAIL_PROVIDER", "brevo_api")).lower().strip()
         logger.info(f"[Email Service] Validating email configuration on startup. Provider: {provider}")
         
+        if provider == "console":
+            logger.info("[Email Service] Startup validation successful: Console Email Logger is configured.")
+            return True
+        
         api_key = os.getenv("BREVO_API_KEY") or getattr(settings, "BREVO_API_KEY", "")
         from_email = os.getenv("EMAIL_FROM") or getattr(settings, "EMAIL_FROM", "")
         
@@ -34,6 +38,16 @@ class BrevoEmailService:
         https://api.brevo.com/v3/smtp/email
         With exponential backoff retry, timeout, and detailed logging.
         """
+        provider = (os.getenv("EMAIL_PROVIDER") or getattr(settings, "EMAIL_PROVIDER", "brevo_api")).lower().strip()
+        if provider == "console":
+            logger.info("\n" + "="*50)
+            logger.info(f" [CONSOLE EMAIL LOGGER] SENDING EMAIL")
+            logger.info(f" To: {email}")
+            logger.info(f" Subject: {subject}")
+            logger.info(f" Text Content: {text_content}")
+            logger.info("="*50 + "\n")
+            return True
+
         api_key = os.getenv("BREVO_API_KEY") or getattr(settings, "BREVO_API_KEY", "")
         from_email = os.getenv("EMAIL_FROM") or getattr(settings, "EMAIL_FROM", "")
         
@@ -222,7 +236,7 @@ class BrevoEmailService:
             }
             logger.info("[BREVO REST API DIAGNOSTICS] Testing API authentication...")
             with httpx.Client(timeout=10.0) as client:
-                response = client.get("https://api.brevo.com/v3/smtp/senders", headers=headers)
+                response = client.get("https://api.brevo.com/v3/senders", headers=headers)
                 logger.info(f"[BREVO REST API DIAGNOSTICS] Response status code: {response.status_code}")
                 logger.info(f"[BREVO REST API DIAGNOSTICS] Response body: {response.text}")
                 

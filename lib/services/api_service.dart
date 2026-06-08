@@ -44,24 +44,6 @@ class ApiService {
       ),
     );
 
-    // ── Retry on transient network errors ─────────────────────────────────
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onError: (DioException e, handler) async {
-          if (_shouldRetry(e)) {
-            try {
-              await Future.delayed(const Duration(seconds: 2));
-              final response = await _dio.fetch(e.requestOptions);
-              return handler.resolve(response);
-            } catch (_) {
-              return handler.next(e);
-            }
-          }
-          return handler.next(e);
-        },
-      ),
-    );
-
     // ── JWT injection ──────────────────────────────────────────────────────
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -119,13 +101,7 @@ class ApiService {
   }
 
   String _handleError(DioException e) {
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout ||
-        e.type == DioExceptionType.sendTimeout) {
-      return "Connection timed out. Please check your internet connection.";
-    } else if (e.type == DioExceptionType.connectionError || e.type == DioExceptionType.unknown) {
-      return "No internet connection or server unreachable.";
-    } else if (e.response != null) {
+    if (e.response != null) {
       final data = e.response?.data;
       if (data is Map && data.containsKey('detail')) {
         return data['detail'].toString();
@@ -133,13 +109,19 @@ class ApiService {
         return "Server error: ${e.response?.statusCode}";
       }
     }
-    return "Something went wrong";
-  }
-
-  bool _shouldRetry(DioException e) {
-    return e.type == DioExceptionType.connectionTimeout ||
+    if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
-        e.type == DioExceptionType.sendTimeout ||
-        e.type == DioExceptionType.connectionError;
+        e.type == DioExceptionType.sendTimeout) {
+      return "Connection timed out. Please check your internet connection.";
+    } else if (e.type == DioExceptionType.connectionError) {
+      return "No internet connection or server unreachable.";
+    } else if (e.type == DioExceptionType.unknown) {
+      final message = e.message;
+      if (message != null && message.isNotEmpty) {
+        return message;
+      }
+      return "No internet connection or server unreachable.";
+    }
+    return "Something went wrong";
   }
 }

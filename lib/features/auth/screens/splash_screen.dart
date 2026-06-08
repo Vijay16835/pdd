@@ -40,18 +40,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       
       // Start both the auth check and a minimum delay timer
       // We also add a timeout to ensure we never hang forever
-      await Future.any([
-        Future.wait([
-          auth.checkInitialAuth().catchError((e) {
-            debugPrint("Auth check failed: $e");
-          }),
-          Future.delayed(const Duration(milliseconds: 2500)),
-        ]),
-        Future.delayed(const Duration(seconds: 10)).then((_) {
-          debugPrint("Initialization timed out");
-          throw TimeoutException("Initialization timed out");
+      await Future.wait([
+        auth.checkInitialAuth().catchError((e) {
+          debugPrint("Auth check failed: $e");
         }),
-      ]);
+        Future.delayed(const Duration(milliseconds: 2500)),
+      ]).timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
       _navigate();
@@ -153,7 +147,4 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 }
 
-class TimeoutException implements Exception {
-  final String message;
-  TimeoutException(this.message);
-}
+
