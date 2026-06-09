@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:lexguard_ai/models/user_model.dart';
@@ -220,16 +221,8 @@ class AuthProvider extends ChangeNotifier {
         }
 
         debugPrint('[AuthProvider] Starting Google Sign-In for Mobile...');
-        final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-        if (googleUser == null) {
-          debugPrint('[AuthProvider] Google Sign-In cancelled by user.');
-          _authState = AuthState.unauthenticated;
-          notifyListeners();
-          return false;
-        }
-
-        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+        final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
         if (googleAuth.idToken == null) {
           debugPrint('[AuthProvider] Google idToken is null — OAuth client may not be configured.');
