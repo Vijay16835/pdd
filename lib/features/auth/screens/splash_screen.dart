@@ -44,7 +44,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         auth.checkInitialAuth().catchError((e) {
           debugPrint("Auth check failed: $e");
         }),
-        Future.delayed(const Duration(milliseconds: 2500)),
+        Future.delayed(const Duration(milliseconds: 600)),
       ]).timeout(const Duration(seconds: 10));
 
       if (!mounted) return;

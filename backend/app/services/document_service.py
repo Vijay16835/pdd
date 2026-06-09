@@ -172,8 +172,28 @@ def validate_file(filename: str, file_size: int) -> tuple:
     return True, ""
 
 def get_user_storage_usage_mb(user_id: str) -> float:
-    """Calculate the total storage used by a user in MB directly from Supabase Storage."""
+    """Calculate the total storage used by a user in MB.
+    Optimized: Queries local PostgreSQL database first, falls back to Supabase Storage only if needed.
+    """
     try:
+        from app.services.firebase_service import firebase_service
+        conn = firebase_service._get_pg_conn()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT SUM(size_in_mb) FROM documents WHERE user_id = %s", (user_id,))
+                result = cur.fetchone()
+                cur.close()
+                conn.close()
+                if result and result[0] is not None:
+                    return float(result[0])
+            except Exception as e:
+                print(f"PostgreSQL storage query failed, trying fallback: {e}")
+                if conn:
+                    conn.close()
+        
+        # Fallback to direct Supabase Storage API if DB connection fails
+        print(f"Running fallback storage usage lookup for user {user_id} via Supabase Storage...")
         supabase = get_supabase()
         files = supabase.storage.from_("legal-documents").list(f"users/{user_id}/documents")
         total_size_bytes = sum(f.get('metadata', {}).get('size', 0) for f in files if f.get('metadata')) if files else 0
@@ -181,3 +201,4 @@ def get_user_storage_usage_mb(user_id: str) -> float:
     except Exception as e:
         print(f"Failed to fetch storage usage for user {user_id}: {e}")
         return 0.0
+

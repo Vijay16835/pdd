@@ -29,17 +29,35 @@ import 'package:lexguard_ai/features/auth/screens/reset_password_screen.dart';
 import 'package:lexguard_ai/services/tts_service.dart';
 import 'package:lexguard_ai/services/stt_service.dart';
 import 'package:lexguard_ai/features/language/providers/language_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('Firebase initialized successfully');
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('Firebase initialized successfully');
+    } else {
+      debugPrint('Firebase already initialized');
+    }
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
+  }
+
+  // Pre-load SharedPreferences to avoid MaterialApp theme rebuild flickers
+  String? initialThemeMode;
+  bool? initialIsDarkMode;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    initialThemeMode = prefs.getString('themeMode');
+    if (initialThemeMode == null) {
+      initialIsDarkMode = prefs.getBool('isDarkMode');
+    }
+  } catch (e) {
+    debugPrint('SharedPreferences loading failed in main(): $e');
   }
 
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
@@ -49,11 +67,21 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const LexGuardApp());
+  runApp(LexGuardApp(
+    initialThemeMode: initialThemeMode,
+    initialIsDarkMode: initialIsDarkMode,
+  ));
 }
 
 class LexGuardApp extends StatelessWidget {
-  const LexGuardApp({super.key});
+  final String? initialThemeMode;
+  final bool? initialIsDarkMode;
+
+  const LexGuardApp({
+    super.key,
+    this.initialThemeMode,
+    this.initialIsDarkMode,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +94,12 @@ class LexGuardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AnalysisProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => HistoryProvider()),
-        ChangeNotifierProvider(create: (_) => ProfileProvider()),
+        ChangeNotifierProvider(
+          create: (_) => ProfileProvider(
+            initialThemeMode: initialThemeMode,
+            initialIsDarkMode: initialIsDarkMode,
+          ),
+        ),
         ChangeNotifierProvider(create: (_) => SummaryProvider()),
         ChangeNotifierProvider(create: (_) => TtsService()),
         ChangeNotifierProvider(create: (_) => SttService()),

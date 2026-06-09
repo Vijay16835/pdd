@@ -10,10 +10,10 @@ class ApiService {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
-        // Reduced to 30s connection timeout as per specifications
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-        sendTimeout: const Duration(seconds: 30),
+        // Reduced to 10s connection timeout for better UX
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        sendTimeout: const Duration(seconds: 10),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -72,6 +72,7 @@ class ApiService {
     Future<Response> Function() request, {
     int maxRetries = 3,
     Duration initialDelay = const Duration(seconds: 1),
+    required bool isIdempotent,
   }) async {
     int attempts = 0;
     while (true) {
@@ -79,6 +80,11 @@ class ApiService {
         attempts++;
         return await request();
       } on DioException catch (e) {
+        // Do not retry non-idempotent operations (POST, PUT, DELETE, etc.)
+        if (!isIdempotent) {
+          rethrow;
+        }
+
         // Only retry on network timeout/error or 5xx server issues
         final isNetworkError = e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
@@ -103,7 +109,10 @@ class ApiService {
 
   Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
     try {
-      return await _executeWithRetry(() => _dio.get(path, queryParameters: queryParameters));
+      return await _executeWithRetry(
+        () => _dio.get(path, queryParameters: queryParameters),
+        isIdempotent: true,
+      );
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -111,7 +120,10 @@ class ApiService {
 
   Future<Response> post(String path, {dynamic data}) async {
     try {
-      return await _executeWithRetry(() => _dio.post(path, data: data));
+      return await _executeWithRetry(
+        () => _dio.post(path, data: data),
+        isIdempotent: false,
+      );
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -119,7 +131,10 @@ class ApiService {
 
   Future<Response> put(String path, {dynamic data}) async {
     try {
-      return await _executeWithRetry(() => _dio.put(path, data: data));
+      return await _executeWithRetry(
+        () => _dio.put(path, data: data),
+        isIdempotent: false,
+      );
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -127,7 +142,10 @@ class ApiService {
 
   Future<Response> delete(String path) async {
     try {
-      return await _executeWithRetry(() => _dio.delete(path));
+      return await _executeWithRetry(
+        () => _dio.delete(path),
+        isIdempotent: false,
+      );
     } on DioException catch (e) {
       throw _handleError(e);
     }

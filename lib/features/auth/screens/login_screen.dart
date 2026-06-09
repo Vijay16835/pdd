@@ -78,9 +78,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    return LoadingOverlay(
-      isLoading: auth.authState == AuthState.loading,
+    return Selector<AuthProvider, bool>(
+      selector: (_, auth) => auth.authState == AuthState.loading,
+      builder: (context, isLoading, child) {
+        return LoadingOverlay(
+          isLoading: isLoading,
+          child: child!,
+        );
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: Container(
@@ -149,33 +154,39 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 40),
 
-                    // Error Message
-                    if (auth.errorMessage != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: AppColors.errorBg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline, color: AppColors.error, size: 18),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                auth.errorMessage!,
-                                style: GoogleFonts.inter(
-                                  color: AppColors.error,
-                                  fontSize: 13,
-                                ),
-                              ),
+                    // Error Message (Optimized Selector)
+                    Selector<AuthProvider, String?>(
+                      selector: (_, auth) => auth.errorMessage,
+                      builder: (context, errorMessage, _) {
+                        if (errorMessage == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 20),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.errorBg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    errorMessage,
+                                    style: GoogleFonts.inter(
+                                      color: AppColors.error,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
 
                     // Email
                     CustomTextField(
@@ -223,31 +234,36 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: Checkbox(
-                                value: auth.rememberMe,
-                                onChanged: (v) =>
-                                    context.read<AuthProvider>().setRememberMe(v ?? false),
-                                activeColor: AppColors.gold,
-                                side: BorderSide(color: AppColors.border),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
+                        Selector<AuthProvider, bool>(
+                          selector: (_, auth) => auth.rememberMe,
+                          builder: (context, rememberMe, _) {
+                            return Row(
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: Checkbox(
+                                    value: rememberMe,
+                                    onChanged: (v) =>
+                                        context.read<AuthProvider>().setRememberMe(v ?? false),
+                                    activeColor: AppColors.gold,
+                                    side: BorderSide(color: AppColors.border),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Remember me',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Remember me',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                         TextButton(
                           onPressed: () => Navigator.pushNamed(context, '/forgot-password'),

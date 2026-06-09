@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/signup")
-async def signup(user_in: UserCreate, db = Depends(get_db)):
+async def signup(user_in: UserCreate, background_tasks: BackgroundTasks, db = Depends(get_db)):
     email = user_in.email.lower().strip()
     logger.info(f"[Auth API] /signup entry: email='{email}', name='{user_in.full_name}'")
     try:
@@ -69,22 +69,10 @@ async def signup(user_in: UserCreate, db = Depends(get_db)):
         logger.info("OTP stored")
         logger.info(f"[Auth API] /signup: Successfully saved OTP to database for '{email}'")
         
-        # Send OTP via email using asyncio.to_thread with a timeout
-        logger.info(f"[Auth API] /signup: Dispatching email_service.send_otp_email via thread pool to '{email}'...")
-        try:
-            email_sent = await asyncio.wait_for(
-                asyncio.to_thread(email_service.send_otp_email, email, otp_code),
-                timeout=4.0
-            )
-            if email_sent:
-                logger.info(f"[Auth API] /signup exit: Verification OTP successfully sent to '{email}'")
-                return {"success": True, "message": "OTP sent to your email. Please verify to complete registration."}
-            else:
-                logger.warning(f"[Auth API] /signup: Email delivery failed for '{email}' (returned False)")
-                return {"success": True, "message": "OTP generated. Your verification code is available on the server (Email delivery failed)."}
-        except Exception as e:
-            logger.warning(f"[Auth API] /signup: Email dispatch exception for '{email}': {e}")
-            return {"success": True, "message": "OTP generated. Your verification code is available on the server (Email service currently unavailable)."}
+        # Send OTP via email in the background
+        logger.info(f"[Auth API] /signup: Dispatching email_service.send_otp_email in background to '{email}'...")
+        background_tasks.add_task(send_otp_in_background, email, otp_code)
+        return {"success": True, "message": "OTP sent to your email. Please verify to complete registration."}
     except HTTPException as he:
         logger.error(f"[Auth API] /signup HTTP Exception: {he.status_code} - {he.detail}")
         raise he
@@ -251,7 +239,7 @@ async def verify_otp(data: OTPVerify, db = Depends(get_db)):
 
 
 @router.post("/send-otp")
-async def send_otp(data: SendOTP, db = Depends(get_db)):
+async def send_otp(data: SendOTP, background_tasks: BackgroundTasks, db = Depends(get_db)):
     email = data.email.lower().strip()
     logger.info(f"[Auth API] /send-otp entry: email='{email}'")
     try:
@@ -278,21 +266,10 @@ async def send_otp(data: SendOTP, db = Depends(get_db)):
         logger.info("OTP stored")
         logger.info(f"[Auth API] /send-otp: Successfully saved OTP to database for '{email}'")
         
-        logger.info(f"[Auth API] /send-otp: Dispatching email_service.send_otp_email via thread pool to '{email}'...")
-        try:
-            email_sent = await asyncio.wait_for(
-                asyncio.to_thread(email_service.send_otp_email, email, otp_code),
-                timeout=4.0
-            )
-            if email_sent:
-                logger.info(f"[Auth API] /send-otp exit: OTP successfully resent to '{email}'")
-                return {"success": True, "message": "OTP resent successfully."}
-            else:
-                logger.warning(f"[Auth API] /send-otp: Email delivery failed for '{email}' (returned False)")
-                return {"success": True, "message": "OTP regenerated. Your verification code is available on the server."}
-        except Exception as e:
-            logger.warning(f"[Auth API] /send-otp: Email dispatch exception for '{email}': {e}")
-            return {"success": True, "message": "OTP regenerated. Your verification code is available on the server."}
+        # Send OTP via email in the background
+        logger.info(f"[Auth API] /send-otp: Dispatching email_service.send_otp_email in background to '{email}'...")
+        background_tasks.add_task(send_otp_in_background, email, otp_code)
+        return {"success": True, "message": "OTP resent successfully."}
     except HTTPException as he:
         logger.error(f"[Auth API] /send-otp HTTP Exception: {he.status_code} - {he.detail}")
         raise he
@@ -301,24 +278,40 @@ async def send_otp(data: SendOTP, db = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal server error while resending OTP: {str(e)}")
 
 
+def send_otp_in_background(email: str, otp_code: str):
+    import time
+    start_time = time.time()
+    logger.info(f"[Background Task] OTP email sending started for '{email}'")
+    try:
+        email_sent = email_service.send_otp_email(email, otp_code)
+        duration = time.time() - start_time
+        if email_sent:
+            logger.info(f"[Background Task] OTP email sent successfully to '{email}' in {duration:.4f} seconds")
+        else:
+            logger.error(f"[Background Task] Failed to send OTP email to '{email}' in {duration:.4f} seconds")
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"[Background Task] Exception during OTP email sending to '{email}' after {duration:.4f} seconds: {str(e)}", exc_info=True)
+
+
 def send_email_in_background(email: str, otp_code: str):
     import time
     start_time = time.time()
-    logger.info(f"[Background Task] Email sending started for '{email}'")
+    logger.info(f"[Background Task] Password reset email sending started for '{email}'")
     try:
         email_sent = email_service.send_password_reset_email(email, otp_code)
         duration = time.time() - start_time
         if email_sent:
-            logger.info(f"[Background Task] Email sent successfully to '{email}' in {duration:.4f} seconds")
+            logger.info(f"[Background Task] Password reset email sent successfully to '{email}' in {duration:.4f} seconds")
         else:
-            logger.error(f"[Background Task] Failed to send email to '{email}' in {duration:.4f} seconds")
+            logger.error(f"[Background Task] Failed to send password reset email to '{email}' in {duration:.4f} seconds")
     except Exception as e:
         duration = time.time() - start_time
-        logger.error(f"[Background Task] Exception during email sending to '{email}' after {duration:.4f} seconds: {str(e)}", exc_info=True)
+        logger.error(f"[Background Task] Exception during password reset email sending to '{email}' after {duration:.4f} seconds: {str(e)}", exc_info=True)
 
 
 @router.post("/send-reset-otp")
-async def send_reset_otp(data: ForgotPassword, db = Depends(get_db)):
+async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks, db = Depends(get_db)):
     import time
     start_time = time.time()
     email = data.email.lower().strip()
@@ -348,21 +341,10 @@ async def send_reset_otp(data: ForgotPassword, db = Depends(get_db)):
             raise HTTPException(status_code=500, detail="Failed to save password reset code to database.")
         logger.info(f"[SEND_RESET_OTP] OTP stored")
         
-        logger.info(f"[SEND_RESET_OTP] Dispatching email_service.send_password_reset_email via thread pool to '{email}'...")
-        try:
-            email_sent = await asyncio.wait_for(
-                asyncio.to_thread(email_service.send_password_reset_email, email, otp_code),
-                timeout=4.0
-            )
-            if email_sent:
-                logger.info(f"[SEND_RESET_OTP] Verification code sent successfully to '{email}'")
-                return {"success": True, "message": "Verification code sent to your email."}
-            else:
-                logger.warning(f"[SEND_RESET_OTP] Email delivery failed for '{email}' (returned False)")
-                return {"success": True, "message": "Verification code generated. (Warning: Email service is currently experiencing delay.)"}
-        except Exception as e:
-            logger.warning(f"[SEND_RESET_OTP] Email dispatch exception for '{email}': {e}")
-            return {"success": True, "message": "Verification code generated. (Warning: Email service is currently experiencing delay.)"}
+        # Send Password Reset OTP via email in the background
+        logger.info(f"[SEND_RESET_OTP] Dispatching email_service.send_password_reset_email in background to '{email}'...")
+        background_tasks.add_task(send_email_in_background, email, otp_code)
+        return {"success": True, "message": "Verification code sent to your email."}
             
     except HTTPException as he:
         raise he

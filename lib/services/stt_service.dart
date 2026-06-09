@@ -12,9 +12,7 @@ class SttService extends ChangeNotifier {
   bool get isListening => _isListening;
   String get lastWords => _lastWords;
 
-  SttService() {
-    _initStt();
-  }
+  SttService();
 
   Future<void> _initStt() async {
     try {

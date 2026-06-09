@@ -54,8 +54,17 @@ class ProfileProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get uploadSuccessAlerts => _uploadSuccessAlerts;
   bool get isLoading => _isLoading;
 
-  ProfileProvider() {
+  ProfileProvider({String? initialThemeMode, bool? initialIsDarkMode}) {
     WidgetsBinding.instance.addObserver(this);
+    if (initialThemeMode != null) {
+      _themeMode = ThemeMode.values.firstWhere(
+        (e) => e.name == initialThemeMode, 
+        orElse: () => ThemeMode.system
+      );
+    } else if (initialIsDarkMode != null) {
+      _themeMode = initialIsDarkMode ? ThemeMode.dark : ThemeMode.light;
+    }
+    AppColors.setDarkMode(isDarkMode);
     _loadSettings();
   }
 
