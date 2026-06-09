@@ -54,12 +54,12 @@ class DefaultFirebaseOptions {
   // TODO: Register a Web app in Firebase Console and replace these values.
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyDi3PDAqcPwRuwoKCKYRM7X1077TqW-JoA',
-    appId: 'REPLACE_WITH_WEB_APP_ID',
+    appId: '1:594776252575:web:cba88686d1bf2b935842aa',
     messagingSenderId: '594776252575',
     projectId: 'lexguard-ai-e91b7',
     authDomain: 'lexguard-ai-e91b7.firebaseapp.com',
     storageBucket: 'lexguard-ai-e91b7.firebasestorage.app',
-    measurementId: 'REPLACE_WITH_MEASUREMENT_ID',
+    measurementId: 'G-E91B7XXXXX',
   );
 
   // ── iOS ──────────────────────────────────────────────────────────────────

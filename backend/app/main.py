@@ -37,7 +37,11 @@ async def startup_event():
 # Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify real origins for Flutter web or apps
+    allow_origins=[
+        "https://vijay16835.github.io",
+        "https://vijay16835.github.io/lexguard-ai-web",
+    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
