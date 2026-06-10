@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:lexguard_ai/core/theme/app_colors.dart';
 
 class AboutScreen extends StatelessWidget {
@@ -39,22 +40,52 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 40),
             _buildInfoRow('Version', '1.0.0 (Build 1)'),
             _buildInfoRow('Engine', 'GPT-4o / Gemini 1.5 Pro'),
-            _buildInfoRow('Developer', 'LexGuard AI Team'),
-            _buildInfoRow('Website', 'www.lexguard.ai'),
+            _buildInfoRow('Developer', 'Vijay T'),
+            _buildInfoRow(
+              'Website',
+              'www.lexguard.ai',
+              onTap: () async {
+                final Uri url = Uri.parse('https://www.lexguard.ai');
+                try {
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  } else {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                } catch (_) {}
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, {VoidCallback? onTap}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-          Text(value, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+          onTap != null
+              ? InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text(
+                      value,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppColors.gold,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.gold,
+                      ),
+                    ),
+                  ),
+                )
+              : Text(value, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
         ],
       ),
     );
