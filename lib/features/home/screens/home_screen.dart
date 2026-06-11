@@ -323,11 +323,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Mobile Header
                   SliverToBoxAdapter(
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [Color(0xFF0A1628), Color(0xFF080F1E)],
+                          colors: Theme.of(context).brightness == Brightness.dark
+                              ? const [Color(0xFF0A1628), Color(0xFF080F1E)]
+                              : const [Color(0xFFFFFFFF), Color(0xFFF5F7FA)],
+                        ),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: AppColors.border,
+                            width: 1,
+                          ),
                         ),
                       ),
                       child: SafeArea(
@@ -344,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       '${DateTimeUtils.getGreeting()},',
                                       style: GoogleFonts.inter(
                                         fontSize: 13,
-                                        color: AppColors.textHint,
+                                        color: AppColors.textSecondary,
                                       ),
                                     ),
                                     Text(
@@ -354,6 +362,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                         fontWeight: FontWeight.w800,
                                         color: AppColors.textPrimary,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -668,13 +678,16 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1E3A6E), Color(0xFF0D1F3C)],
+          colors: isDark
+              ? const [Color(0xFF1E3A6E), Color(0xFF0D1F3C)]
+              : const [Color(0xFFE2E8F0), Color(0xFFCBD5E1)],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.border),

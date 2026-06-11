@@ -103,6 +103,7 @@ class _SignupScreenState extends State<SignupScreen> {
     final auth = context.watch<AuthProvider>();
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 900;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     Widget formWidget = Form(
       key: _formKey,
@@ -350,11 +351,13 @@ class _SignupScreenState extends State<SignupScreen> {
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF080F1E), Color(0xFF0A1628)],
+              colors: isDark
+                  ? const [Color(0xFF080F1E), Color(0xFF0A1628)]
+                  : const [Color(0xFFF5F7FA), Color(0xFFE5EAF2)],
             ),
           ),
           child: SafeArea(
@@ -368,10 +371,12 @@ class _SignupScreenState extends State<SignupScreen> {
                           padding: const EdgeInsets.all(60),
                           decoration: BoxDecoration(
                             border: Border(right: BorderSide(color: AppColors.border, width: 1)),
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [Color(0xFF0F1C2E), Color(0xFF080F1E)],
+                              colors: isDark
+                                  ? const [Color(0xFF0F1C2E), Color(0xFF080F1E)]
+                                  : const [Color(0xFFE5EAF2), Color(0xFFD0D7E5)],
                             ),
                           ),
                           child: Column(
