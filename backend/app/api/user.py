@@ -14,7 +14,7 @@ router = APIRouter()
 
 from app.services.document_service import get_user_storage_usage_mb
 
-STORAGE_LIMIT_MB = 10.0
+STORAGE_LIMIT_MB = 20.0
 
 def _get_user_stats_pg(user_id: str) -> dict:
     """Query PostgreSQL for live document count, high-risk count, and AI chat count."""

@@ -8,6 +8,7 @@ import 'package:lexguard_ai/core/theme/app_colors.dart';
 import 'package:lexguard_ai/features/upload/providers/document_provider.dart';
 import 'package:lexguard_ai/features/analysis/screens/analysis_result_screen.dart';
 import 'package:lexguard_ai/features/profile/providers/profile_provider.dart';
+import 'package:lexguard_ai/features/auth/providers/auth_provider.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -47,6 +48,9 @@ class _UploadScreenState extends State<UploadScreen> {
     if (!mounted) return;
 
     if (docData != null) {
+      if (mounted) {
+        context.read<AuthProvider>().refreshStats();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Document uploaded! AI analysis started...'),

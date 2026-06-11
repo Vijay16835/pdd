@@ -351,7 +351,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void _deleteDoc(BuildContext context, DocumentModel doc) async {
     final success = await context.read<HistoryProvider>().deleteDocument(doc.id);
     if (success && context.mounted) {
-      await context.read<AuthProvider>().checkInitialAuth();
+      await context.read<AuthProvider>().refreshStats();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -434,6 +434,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     Navigator.pop(context);
     if (path != null) {
+      context.read<AuthProvider>().refreshStats();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Report downloaded to: $path', style: GoogleFonts.inter(color: Colors.white)),

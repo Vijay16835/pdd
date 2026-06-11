@@ -257,7 +257,7 @@ async def upload_document(
         print(f"Timeout/Error fetching storage usage in upload: {e}")
         used_storage_mb = 0.0
     
-    if used_storage_mb + size_mb > 10.0:
+    if used_storage_mb + size_mb > 20.0:
         raise HTTPException(status_code=400, detail="Storage limit reached. Delete files to continue.")
     
     # Generate unique ID and save file locally first
@@ -603,6 +603,30 @@ async def delete_document(
             os.remove(local_path)
         except:
             pass
+            
+    # Remove local report files from disk
+    try:
+        report_dir = os.path.join(settings.UPLOAD_DIR, "reports")
+        if os.path.exists(report_dir):
+            for filename in os.listdir(report_dir):
+                if f"LexGuard_Analysis_{document_id}" in filename:
+                    try:
+                        os.remove(os.path.join(report_dir, filename))
+                    except Exception as report_err:
+                        print(f"Failed to delete report file: {report_err}")
+    except Exception as e:
+        print(f"Failed to scan report directory for deletion: {e}")
+        
+    # Remove file from Supabase Storage
+    try:
+        from app.services.document_service import get_supabase
+        supabase = get_supabase()
+        file_ext = doc_data.get("type", "pdf")
+        remote_path = f"users/{current_user.id}/documents/{document_id}.{file_ext}"
+        supabase.storage.from_("legal-documents").remove([remote_path])
+        print(f"Successfully deleted remote document from Supabase: {remote_path}")
+    except Exception as e:
+        print(f"Failed to delete document from Supabase Storage: {e}")
     
     db.delete_document(document_id)
     db.delete_analysis(document_id)

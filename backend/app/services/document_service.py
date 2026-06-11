@@ -173,32 +173,104 @@ def validate_file(filename: str, file_size: int) -> tuple:
 
 def get_user_storage_usage_mb(user_id: str) -> float:
     """Calculate the total storage used by a user in MB.
-    Optimized: Queries local PostgreSQL database first, falls back to Supabase Storage only if needed.
+    Includes:
+    - Uploaded files (from PostgreSQL/Firestore, checking local disk or Supabase Storage size)
+    - Generated reports (from local disk reports directory matching user's document IDs)
     """
+    total_size_bytes = 0
+    doc_ids_and_sizes = {}  # doc_id -> size_in_bytes
+
+    # 1. Fetch documents from PostgreSQL
     try:
         from app.services.firebase_service import firebase_service
         conn = firebase_service._get_pg_conn()
         if conn:
             try:
                 cur = conn.cursor()
-                cur.execute("SELECT SUM(size_in_mb) FROM documents WHERE user_id = %s", (user_id,))
-                result = cur.fetchone()
+                cur.execute("SELECT id, size_in_mb FROM documents WHERE user_id = %s", (user_id,))
+                rows = cur.fetchall()
+                for row in rows:
+                    doc_id = row[0]
+                    size_mb = row[1] or 0.0
+                    doc_ids_and_sizes[doc_id] = int(size_mb * 1024 * 1024)
                 cur.close()
                 conn.close()
-                if result and result[0] is not None:
-                    return float(result[0])
             except Exception as e:
-                print(f"PostgreSQL storage query failed, trying fallback: {e}")
+                print(f"Error querying PostgreSQL documents: {e}")
                 if conn:
                     conn.close()
-        
-        # Fallback to direct Supabase Storage API if DB connection fails
-        print(f"Running fallback storage usage lookup for user {user_id} via Supabase Storage...")
+    except Exception as e:
+        print(f"PostgreSQL connection error: {e}")
+
+    # 2. Fetch documents from Firestore
+    try:
+        from app.services.firebase_service import firebase_service
+        if firebase_service.db:
+            docs = firebase_service.db.collection("documents").where("user_id", "==", user_id).stream()
+            for doc in docs:
+                doc_id = doc.id
+                data = doc.to_dict()
+                size_mb = data.get("size_in_mb", 0.0) or 0.0
+                if doc_id not in doc_ids_and_sizes:
+                    doc_ids_and_sizes[doc_id] = int(size_mb * 1024 * 1024)
+    except Exception as e:
+        print(f"Error querying Firestore documents: {e}")
+
+    # 3. Fetch documents from Supabase Storage
+    try:
         supabase = get_supabase()
         files = supabase.storage.from_("legal-documents").list(f"users/{user_id}/documents")
-        total_size_bytes = sum(f.get('metadata', {}).get('size', 0) for f in files if f.get('metadata')) if files else 0
-        return total_size_bytes / (1024 * 1024)
+        if files:
+            for f in files:
+                name = f.get("name")
+                if name:
+                    doc_id, ext = os.path.splitext(name)
+                    metadata = f.get('metadata')
+                    if metadata:
+                        size_bytes = metadata.get('size', 0)
+                        doc_ids_and_sizes[doc_id] = size_bytes
     except Exception as e:
-        print(f"Failed to fetch storage usage for user {user_id}: {e}")
-        return 0.0
+        print(f"Error listing Supabase Storage files: {e}")
+
+    # 4. Check actual file sizes on local disk
+    from app.core.config import settings
+    upload_dir = settings.UPLOAD_DIR
+    local_doc_sizes = {}
+    if os.path.exists(upload_dir):
+        try:
+            for filename in os.listdir(upload_dir):
+                filepath = os.path.join(upload_dir, filename)
+                if os.path.isfile(filepath):
+                    doc_id, ext = os.path.splitext(filename)
+                    if doc_id in doc_ids_and_sizes:
+                        local_doc_sizes[doc_id] = os.path.getsize(filepath)
+        except Exception as e:
+            print(f"Error scanning local upload directory: {e}")
+
+    # For each found document ID, use local size if it exists, else the db/remote size
+    for doc_id, remote_size in doc_ids_and_sizes.items():
+        if doc_id in local_doc_sizes:
+            total_size_bytes += local_doc_sizes[doc_id]
+        else:
+            total_size_bytes += remote_size
+
+    # 5. Check generated reports
+    # Reports are under settings.UPLOAD_DIR/reports/LexGuard_Analysis_{doc_id}.{ext}
+    reports_dir = os.path.join(upload_dir, "reports")
+    if os.path.exists(reports_dir):
+        try:
+            for filename in os.listdir(reports_dir):
+                filepath = os.path.join(reports_dir, filename)
+                if os.path.isfile(filepath):
+                    # Check if this report belongs to any of the user's document IDs
+                    for doc_id in doc_ids_and_sizes.keys():
+                        if f"LexGuard_Analysis_{doc_id}" in filename:
+                            total_size_bytes += os.path.getsize(filepath)
+                            break
+        except Exception as e:
+            print(f"Error scanning local reports directory: {e}")
+
+    total_size_mb = total_size_bytes / (1024 * 1024)
+    return round(total_size_mb, 2)
+
 
