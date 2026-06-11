@@ -37,8 +37,6 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       final chat = context.read<ChatProvider>();
       if (widget.documentId != null) {
-        // Only call setDocumentContext if the document has changed to avoid
-        // clearing the documentName that was set by the calling screen.
         if (chat.currentDocumentId != widget.documentId) {
           debugPrint('[ChatScreen] initState: setting document context: ${widget.documentId}');
           chat.setDocumentContext(widget.documentId!, documentName: widget.documentName);
@@ -47,10 +45,8 @@ class _ChatScreenState extends State<ChatScreen> {
           chat.loadHistory();
         }
       }
-      // Only load dashboard if this is the root ChatScreen (bottom nav), not a pushed route
-      if (!Navigator.canPop(context)) {
-        context.read<HomeProvider>().loadDashboard();
-      }
+      // Load recent documents to populate the selector list
+      context.read<HomeProvider>().loadDashboard();
     });
   }
 
@@ -62,7 +58,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final tts = context.read<TtsService>();
     final langProvider = context.read<LanguageProvider>();
 
-    // Keep ChatProvider language in sync with shared LanguageProvider
     chat.setSelectedLanguage(langProvider.selectedLanguage);
 
     chat.sendMessage(text, onAiResponse: (aiResponseText) {
@@ -122,203 +117,216 @@ class _ChatScreenState extends State<ChatScreen> {
     final stt = context.watch<SttService>();
     final tts = context.watch<TtsService>();
     final langProvider = context.watch<LanguageProvider>();
+    final home = context.watch<HomeProvider>();
     context.watch<ProfileProvider>();
     final messages = chat.messages;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 900;
 
-    // Keep ChatProvider in sync whenever LanguageProvider changes
     if (chat.selectedLanguage != langProvider.selectedLanguage) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         chat.setSelectedLanguage(langProvider.selectedLanguage);
       });
     }
 
-    return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) {
-          debugPrint('[ChatScreen] Back navigation: stopping TTS.');
-          tts.stop();
-        }
-      },
-      child: Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        leading: IconButton(
-                onPressed: () {
-                  tts.stop();
-                  if (Navigator.canPop(context)) {
-                    Navigator.pop(context);
-                  }
-                },
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
-                  child: Icon(Icons.arrow_back_ios_new, size: 16, color: AppColors.textPrimary),
-                ),
-              ),
-        title: Row(children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(gradient: const LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
-            child: const Icon(Icons.psychology_outlined, size: 20, color: AppColors.navy),
+    // Header Widget Actions
+    List<Widget> headerActions = [
+      IconButton(
+        onPressed: () {
+          chat.setVoiceResponseEnabled(!chat.isVoiceResponseEnabled);
+          if (!chat.isVoiceResponseEnabled) {
+            tts.stop();
+          }
+        },
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: chat.isVoiceResponseEnabled ? AppColors.gold.withValues(alpha: 0.15) : AppColors.cardDark,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: chat.isVoiceResponseEnabled ? AppColors.gold : AppColors.border),
           ),
-          const SizedBox(width: 10),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('LexGuard AI', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            Row(children: [
-              Container(width: 6, height: 6, decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
-              const SizedBox(width: 4),
-              Text('Online', style: GoogleFonts.inter(fontSize: 11, color: AppColors.success)),
-            ]),
-          ]),
-        ]),
-        actions: [
-          // Voice Response Toggle Action Button
-          IconButton(
-            onPressed: () {
-              chat.setVoiceResponseEnabled(!chat.isVoiceResponseEnabled);
-              if (!chat.isVoiceResponseEnabled) {
-                tts.stop();
-              }
-            },
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: chat.isVoiceResponseEnabled ? AppColors.gold.withValues(alpha: 0.15) : AppColors.cardDark,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: chat.isVoiceResponseEnabled ? AppColors.gold : AppColors.border),
-              ),
-              child: Icon(
-                chat.isVoiceResponseEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                size: 18,
-                color: chat.isVoiceResponseEnabled ? AppColors.gold : AppColors.textSecondary,
-              ),
-            ),
+          child: Icon(
+            chat.isVoiceResponseEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+            size: 18,
+            color: chat.isVoiceResponseEnabled ? AppColors.gold : AppColors.textSecondary,
           ),
-          IconButton(
-            onPressed: () {
-              tts.stop();
-              context.read<ChatProvider>().clearChat();
-            },
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
-              child: Icon(Icons.refresh_outlined, size: 18, color: AppColors.textSecondary),
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
-      body: Column(
-        children: [
-          // Document context bar
-          if (chat.hasDocumentContext)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: AppColors.goldGlow, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.gold.withValues(alpha: 0.2))),
-              child: Row(children: [
-                const Icon(Icons.picture_as_pdf_outlined, color: AppColors.gold, size: 16),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Context: ${chat.currentDocumentName ?? 'Document'}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.gold), overflow: TextOverflow.ellipsis)),
-              ]),
-            )
-          else
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(color: AppColors.warningBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.warning.withValues(alpha: 0.2))),
-              child: Row(children: [
-                const Icon(Icons.info_outline, color: AppColors.warning, size: 16),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Open a document and tap "Chat" to start asking questions', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.warning), overflow: TextOverflow.ellipsis, maxLines: 2)),
-              ]),
+      IconButton(
+        onPressed: () {
+          tts.stop();
+          context.read<ChatProvider>().clearChat();
+        },
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.cardDark,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Icon(Icons.refresh_outlined, size: 18, color: AppColors.textSecondary),
+        ),
+      ),
+      const SizedBox(width: 8),
+    ];
+
+    // Right/Main Panel (Chat Interface)
+    Widget chatInterface = Column(
+      children: [
+        // Context Banner
+        if (chat.hasDocumentContext)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.goldGlow,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.2)),
             ),
-          if (chat.errorMessage != null)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: AppColors.errorBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.error.withValues(alpha: 0.2))),
-              child: Row(children: [
+            child: Row(
+              children: [
+                const Icon(Icons.picture_as_pdf_rounded, color: AppColors.gold, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Active Context: ${chat.currentDocumentName ?? 'Document'}',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.gold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.warningBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.warning.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: AppColors.warning, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Select a document from the left library to ask questions or start reviewing clauses.',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.warning),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Error message banner
+        if (chat.errorMessage != null)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.errorBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
                 const Icon(Icons.error_outline, color: AppColors.error, size: 16),
                 const SizedBox(width: 8),
                 Expanded(child: Text(chat.errorMessage!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.error))),
                 if (chat.hasDocumentContext)
-                  GestureDetector(onTap: () => chat.loadHistory(), child: const Icon(Icons.refresh_rounded, color: AppColors.error, size: 16)),
-              ]),
-            ).animate().shake(),
+                  GestureDetector(
+                    onTap: () => chat.loadHistory(),
+                    child: const Icon(Icons.refresh_rounded, color: AppColors.error, size: 16),
+                  ),
+              ],
+            ),
+          ).animate().shake(),
 
-          // Messages
-          Expanded(
-            child: chat.hasDocumentContext
-                ? ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: messages.length + (chat.isTyping ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (i == messages.length && chat.isTyping) {
-                        return _TypingIndicator();
-                      }
-                      return _MessageBubble(
-                        message: messages[i],
-                        onCopy: () => _copyToClipboard(messages[i].content),
-                      );
-                    },
-                  )
-                : _buildNoContextView(context),
+        // Messages Thread
+        Expanded(
+          child: chat.hasDocumentContext
+              ? ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: messages.length + (chat.isTyping ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    if (i == messages.length && chat.isTyping) {
+                      return _TypingIndicator();
+                    }
+                    return _MessageBubble(
+                      message: messages[i],
+                      onCopy: () => _copyToClipboard(messages[i].content),
+                    );
+                  },
+                )
+              : _buildNoContextView(context, isDesktop),
+        ),
+
+        // Transcription banner
+        if (stt.isListening)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: AppColors.gold.withValues(alpha: 0.1),
+            child: Row(
+              children: [
+                const Icon(Icons.mic, color: AppColors.gold, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    stt.lastWords.isEmpty ? 'Listening...' : stt.lastWords,
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.gold, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ),
           ),
 
-          // Listening transcription indicator banner
-          if (stt.isListening)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: AppColors.gold.withValues(alpha: 0.1),
-              child: Row(
-                children: [
-                  const Icon(Icons.mic, color: AppColors.gold, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      stt.lastWords.isEmpty ? 'Listening...' : stt.lastWords,
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.gold, fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Suggestions
-          if (_showSuggestions && messages.length <= 3) ...[
-            SizedBox(
-              height: 44,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: ChatMessage.suggestedPrompts.length,
-                itemBuilder: (context, i) => GestureDetector(
+        // Prompt Suggestions
+        if (_showSuggestions && messages.length <= 3) ...[
+          SizedBox(
+            height: 44,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: ChatMessage.suggestedPrompts.length,
+              itemBuilder: (context, i) => MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
                   onTap: () => _sendMessage(ChatMessage.suggestedPrompts[i]),
                   child: Container(
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.border)),
-                    child: Text(ChatMessage.suggestedPrompts[i], style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      ChatMessage.suggestedPrompts[i],
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-          ],
+          ),
+          const SizedBox(height: 8),
+        ],
 
-          // Input Bar with Mic and Language Selector
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-            decoration: BoxDecoration(
-              color: AppColors.navBar,
-              border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
-            ),
-            child: Row(children: [
-              // Voice Microphone Button
+        // Input Bar
+        Container(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, isDesktop ? 20 : 24),
+          decoration: BoxDecoration(
+            color: AppColors.navBar,
+            border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+          ),
+          child: Row(
+            children: [
+              // Microphone Button
               GestureDetector(
                 onTap: () => _toggleListening(stt, chat),
                 child: Container(
@@ -337,10 +345,14 @@ class _ChatScreenState extends State<ChatScreen> {
                  .then()
                  .scale(begin: const Offset(1.2, 1.2), end: const Offset(1.0, 1.0), duration: 800.ms, curve: Curves.easeInOut),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 8),
               Expanded(
                 child: Container(
-                  decoration: BoxDecoration(color: AppColors.inputBg, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)),
+                  decoration: BoxDecoration(
+                    color: AppColors.inputBg,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.border),
+                  ),
                   child: Row(
                     children: [
                       Expanded(
@@ -357,8 +369,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           maxLines: null,
                         ),
                       ),
-                      
-                      // Language Selector Dropdown inside input field
                       _LanguagePickerButton(
                         selected: langProvider.selectedLanguage,
                         onChanged: (lang) {
@@ -371,34 +381,290 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               GestureDetector(
                 onTap: () {
-                  if (stt.isListening) {
-                    stt.stopListening();
-                  }
+                  if (stt.isListening) stt.stopListening();
                   _sendMessage(_controller.text);
                 },
                 child: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(gradient: const LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: AppColors.goldGradient),
+                    shape: BoxShape.circle,
+                  ),
                   child: const Icon(Icons.send_rounded, color: AppColors.navy, size: 20),
                 ),
               ),
-            ]),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (isDesktop) {
+      // Desktop Premium Split Interface
+      final docs = home.recentDocuments;
+
+      return PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) tts.stop();
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: Row(
+            children: [
+              // Left Document Selection Library Sidebar
+              Container(
+                width: 320,
+                decoration: BoxDecoration(
+                  border: Border(right: BorderSide(color: AppColors.border, width: 1)),
+                  color: AppColors.cardDark,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Documents Library',
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.upload_file_outlined, color: AppColors.gold, size: 20),
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => const UploadScreen(),
+                              ).then((_) {
+                                home.loadDashboard();
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: home.isLoading
+                          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+                          : docs.isEmpty
+                              ? _buildEmptySidebar()
+                              : ListView.builder(
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: docs.length,
+                                  itemBuilder: (context, idx) {
+                                    final doc = docs[idx];
+                                    final isSelected = chat.currentDocumentId == doc.id;
+                                    final isCompleted = doc.status == DocumentStatus.completed;
+
+                                    return MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          if (isCompleted) {
+                                            chat.setDocumentContext(doc.id, documentName: doc.name);
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('"${doc.name}" is analyzing...')),
+                                            );
+                                          }
+                                        },
+                                        child: AnimatedContainer(
+                                          duration: 150.ms,
+                                          margin: const EdgeInsets.only(bottom: 8),
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? AppColors.gold.withValues(alpha: 0.1)
+                                                : AppColors.cardMid,
+                                            border: Border.all(
+                                              color: isSelected ? AppColors.gold : AppColors.border,
+                                              width: isSelected ? 1.5 : 1.0,
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.picture_as_pdf_outlined,
+                                                color: isSelected ? AppColors.gold : AppColors.textHint,
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      doc.name,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: isSelected ? AppColors.gold : AppColors.textPrimary,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      '${doc.sizeInMB.toStringAsFixed(1)} MB',
+                                                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (!isCompleted)
+                                                Container(
+                                                  width: 8,
+                                                  height: 8,
+                                                  decoration: const BoxDecoration(
+                                                    color: AppColors.gold,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Right Chat Frame
+              Expanded(
+                child: Scaffold(
+                  backgroundColor: AppColors.background,
+                  appBar: AppBar(
+                    backgroundColor: AppColors.background,
+                    elevation: 0,
+                    leadingWidth: 0,
+                    leading: const SizedBox.shrink(),
+                    title: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: AppColors.goldGradient),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.psychology_outlined, size: 22, color: AppColors.navy),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'LexGuard AI Agent',
+                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                            ),
+                            Text(
+                              'Interactive Legal Document Auditor',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    actions: headerActions,
+                  ),
+                  body: chatInterface,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mobile / Tablet View
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) tts.stop();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background,
+          leading: IconButton(
+            onPressed: () {
+              tts.stop();
+              if (Navigator.canPop(context)) Navigator.pop(context);
+            },
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
+              child: Icon(Icons.arrow_back_ios_new, size: 16, color: AppColors.textPrimary),
+            ),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: const BoxDecoration(gradient: LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
+                child: const Icon(Icons.psychology_outlined, size: 20, color: AppColors.navy),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('LexGuard AI', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Row(
+                    children: [
+                      Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
+                      const SizedBox(width: 4),
+                      Text('Online', style: GoogleFonts.inter(fontSize: 11, color: AppColors.success)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: headerActions,
+        ),
+        body: chatInterface,
+      ),
+    );
+  }
+
+  Widget _buildEmptySidebar() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.folder_open, size: 36, color: AppColors.textHint),
+          const SizedBox(height: 12),
+          Text(
+            'No documents in library',
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
-    ), // Scaffold
-    ); // PopScope
+    );
   }
 
-  Widget _buildNoContextView(BuildContext context) {
+  Widget _buildNoContextView(BuildContext context, bool isDesktop) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+          constraints: const BoxConstraints(maxWidth: 480),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
           decoration: BoxDecoration(
             color: AppColors.cardDark,
             borderRadius: BorderRadius.circular(24),
@@ -431,52 +697,55 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Upload a legal document or select one from your library to start analyzing clauses and asking questions.',
+                isDesktop
+                    ? 'Select an agreement from the sidebar library to analyze risks, verify clauses, or translate conditions.'
+                    : 'Select a document or upload a new one to begin asking context-aware questions.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
               ),
               const SizedBox(height: 28),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showDocumentSelectionSheet(context),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: AppColors.border),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              if (!isDesktop)
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showDocumentSelectionSheet(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.folder_open_rounded, size: 16, color: AppColors.gold),
+                        label: Text('Select Doc', style: GoogleFonts.inter(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
-                      icon: const Icon(Icons.folder_open_rounded, size: 16, color: AppColors.gold),
-                      label: Text('Select Doc', style: GoogleFonts.inter(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        final home = context.read<HomeProvider>();
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) => const UploadScreen(),
-                        ).then((_) {
-                          home.loadDashboard();
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.gold,
-                        foregroundColor: AppColors.navy,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final home = context.read<HomeProvider>();
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => const UploadScreen(),
+                          ).then((_) {
+                            home.loadDashboard();
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.gold,
+                          foregroundColor: AppColors.navy,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        icon: const Icon(Icons.upload_file_outlined, size: 16),
+                        label: Text('Upload New', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
-                      icon: const Icon(Icons.upload_file_outlined, size: 16),
-                      label: Text('Upload New', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -496,7 +765,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return Container(
           decoration: BoxDecoration(
             color: AppColors.cardDark,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: BorderRadius.vertical(top: const Radius.circular(24)),
             border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
@@ -646,7 +915,7 @@ class _MessageBubble extends StatelessWidget {
           if (!isUser) ...[
             Container(
               width: 32, height: 32,
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
+              decoration: const BoxDecoration(gradient: LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
               child: const Icon(Icons.psychology_outlined, size: 17, color: AppColors.navy),
             ),
             const SizedBox(width: 8),
@@ -798,7 +1067,7 @@ class _TypingIndicator extends StatelessWidget {
       children: [
         Container(
           width: 32, height: 32,
-          decoration: BoxDecoration(gradient: const LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
+          decoration: const BoxDecoration(gradient: LinearGradient(colors: AppColors.goldGradient), shape: BoxShape.circle),
           child: const Icon(Icons.psychology_outlined, size: 17, color: AppColors.navy),
         ),
         const SizedBox(width: 8),
@@ -826,13 +1095,11 @@ class _Dot extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 8, height: 8,
-      decoration: BoxDecoration(color: AppColors.gold, shape: BoxShape.circle),
+      decoration: const BoxDecoration(color: AppColors.gold, shape: BoxShape.circle),
     ).animate(onPlay: (c) => c.repeat(reverse: true), delay: Duration(milliseconds: delay)).scale(begin: const Offset(0.5, 0.5), end: const Offset(1.0, 1.0), duration: 600.ms);
   }
 }
 
-/// Compact language picker shown inside the chat input bar.
-/// Shows flag + short name; tapping opens a bottom-sheet picker.
 class _LanguagePickerButton extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
@@ -846,7 +1113,7 @@ class _LanguagePickerButton extends StatelessWidget {
       builder: (_) => Container(
         decoration: BoxDecoration(
           color: AppColors.cardDark,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),

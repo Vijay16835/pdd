@@ -10,7 +10,8 @@ import 'package:lexguard_ai/widgets/cards/document_card.dart';
 import 'package:lexguard_ai/features/analysis/screens/analysis_screen.dart';
 import 'package:lexguard_ai/features/auth/providers/auth_provider.dart';
 import 'package:lexguard_ai/features/profile/providers/profile_provider.dart';
-
+import 'package:lexguard_ai/widgets/common/desktop_design_system.dart';
+import 'package:intl/intl.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -20,6 +21,8 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  final TextEditingController _searchCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -29,10 +32,258 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final history = context.watch<HistoryProvider>();
     context.watch<ProfileProvider>();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 900;
 
+    // Search input handler
+    Widget searchBar = Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardDark,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: TextField(
+        controller: _searchCtrl,
+        onChanged: (v) => context.read<HistoryProvider>().search(v),
+        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search documents...',
+          hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textHint),
+          prefixIcon: Icon(Icons.search_rounded, color: AppColors.textHint, size: 18),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.gold, width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+      ),
+    );
+
+    // Filter Chips Row
+    Widget filterChips = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _FilterChip(
+              label: 'All',
+              isSelected: history.riskFilter == null,
+              onTap: () => context.read<HistoryProvider>().setRiskFilter(null)),
+          _FilterChip(
+              label: '🔴 High',
+              isSelected: history.riskFilter == RiskLevel.high,
+              onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.high),
+              color: AppColors.highRisk),
+          _FilterChip(
+              label: '🟡 Medium',
+              isSelected: history.riskFilter == RiskLevel.medium,
+              onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.medium),
+              color: AppColors.mediumRisk),
+          _FilterChip(
+              label: '🟢 Low',
+              isSelected: history.riskFilter == RiskLevel.low,
+              onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.low),
+              color: AppColors.lowRisk),
+        ],
+      ),
+    );
+
+    // Sort Menu Button
+    Widget sortMenu = PopupMenuButton<DocumentSortOption>(
+      initialValue: history.sortOption,
+      color: AppColors.cardMid,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (opt) => context.read<HistoryProvider>().setSortOption(opt),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+            value: DocumentSortOption.date,
+            child: Text('Sort by Date', style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 13))),
+        PopupMenuItem(
+            value: DocumentSortOption.type,
+            child: Text('Sort by Type', style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 13))),
+        PopupMenuItem(
+            value: DocumentSortOption.status,
+            child: Text('Sort by Status', style: GoogleFonts.inter(color: AppColors.textPrimary, fontSize: 13))),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.cardDark,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Sort', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 6),
+            Icon(Icons.sort_rounded, color: AppColors.textSecondary, size: 16),
+          ],
+        ),
+      ),
+    );
+
+    // Error UI
+    Widget errorWidget = Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+          const SizedBox(height: 16),
+          Text(history.errorMessage ?? 'Failed to load history', style: GoogleFonts.inter(color: AppColors.textPrimary)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => context.read<HistoryProvider>().loadHistory(),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: AppColors.navy),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+
+    if (isDesktop) {
+      // Desktop Premium Table Layout
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Filters Toolbar Row
+              Row(
+                children: [
+                  Expanded(flex: 4, child: searchBar),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 5, child: filterChips),
+                  const SizedBox(width: 16),
+                  sortMenu,
+                ],
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${history.documents.length} documents total',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Table Body
+              Expanded(
+                child: history.isLoading
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+                    : history.errorMessage != null
+                        ? errorWidget
+                        : history.documents.isEmpty
+                            ? EmptyStateWidget(
+                                icon: Icons.folder_copy_outlined,
+                                title: 'No documents match your filters',
+                                description: 'Try resetting your search query or choosing another risk category.',
+                                actionLabel: 'Reset Filters',
+                                onActionPressed: () {
+                                  _searchCtrl.clear();
+                                  context.read<HistoryProvider>().search('');
+                                  context.read<HistoryProvider>().setRiskFilter(null);
+                                },
+                              )
+                            : DashboardCard(
+                                padding: EdgeInsets.zero,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Column(
+                                    children: [
+                                      // Table Header Row
+                                      Container(
+                                        color: AppColors.cardMid,
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                                flex: 4,
+                                                child: Text('Document',
+                                                    style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: AppColors.textSecondary))),
+                                            Expanded(
+                                                flex: 2,
+                                                child: Text('Size & Type',
+                                                    style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: AppColors.textSecondary))),
+                                            Expanded(
+                                                flex: 2,
+                                                child: Text('Upload Date',
+                                                    style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: AppColors.textSecondary))),
+                                            Expanded(
+                                                flex: 2,
+                                                child: Text('Risk Assessment',
+                                                    style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: AppColors.textSecondary))),
+                                            Container(
+                                                width: 120,
+                                                alignment: Alignment.centerRight,
+                                                child: Text('Actions',
+                                                    style: GoogleFonts.inter(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: AppColors.textSecondary))),
+                                          ],
+                                        ),
+                                      ),
+                                      const Divider(height: 1),
+
+                                      // Scrollable Table Rows
+                                      Expanded(
+                                        child: ListView.builder(
+                                          itemCount: history.documents.length,
+                                          itemBuilder: (context, idx) {
+                                            final doc = history.documents[idx];
+                                            return _DesktopTableRow(
+                                              document: doc,
+                                              onTap: () => Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                    builder: (_) => AnalysisScreen(documentId: doc.id)),
+                                              ),
+                                              onActionMenu: () => _showDocumentActions(context, doc),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mobile/Tablet Layout fallback
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -41,95 +292,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text('Document History', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              child: Text('Document History',
+                  style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             ),
-
-            // Search Bar
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: TextField(
-                onChanged: (v) => context.read<HistoryProvider>().search(v),
-                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Search documents...',
-                  hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.textHint),
-                  prefixIcon: Icon(Icons.search, color: AppColors.textHint, size: 20),
-                  filled: true,
-                  fillColor: AppColors.cardDark,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.gold)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-              ),
-            ).animate().fadeIn(duration: 400.ms),
-
-            // Filter Chips
+              child: searchBar,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 0, 0),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _FilterChip(label: 'All', isSelected: history.riskFilter == null, onTap: () => context.read<HistoryProvider>().setRiskFilter(null)),
-                  _FilterChip(label: '🔴 High Risk', isSelected: history.riskFilter == RiskLevel.high, onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.high), color: AppColors.highRisk),
-                  _FilterChip(label: '🟡 Medium', isSelected: history.riskFilter == RiskLevel.medium, onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.medium), color: AppColors.mediumRisk),
-                  _FilterChip(label: '🟢 Low Risk', isSelected: history.riskFilter == RiskLevel.low, onTap: () => context.read<HistoryProvider>().setRiskFilter(RiskLevel.low), color: AppColors.lowRisk),
-                ]),
-              ),
-            ).animate(delay: 100.ms).fadeIn(),
-
-            // Count & Sort
+              child: filterChips,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('${history.documents.length} documents', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textHint)),
-                  PopupMenuButton<DocumentSortOption>(
-                    initialValue: history.sortOption,
-                    color: AppColors.cardMid,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    onSelected: (opt) => context.read<HistoryProvider>().setSortOption(opt),
-                    itemBuilder: (context) => [
-                      PopupMenuItem(value: DocumentSortOption.date, child: Text('Sort by Date', style: GoogleFonts.inter(color: AppColors.textPrimary))),
-                      PopupMenuItem(value: DocumentSortOption.type, child: Text('Sort by Type', style: GoogleFonts.inter(color: AppColors.textPrimary))),
-                      PopupMenuItem(value: DocumentSortOption.status, child: Text('Sort by Status', style: GoogleFonts.inter(color: AppColors.textPrimary))),
-                    ],
-                    child: Row(
-                      children: [
-                        Text('Sort', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textHint)),
-                        const SizedBox(width: 4),
-                        Icon(Icons.sort, color: AppColors.textHint, size: 16),
-                      ],
-                    ),
-                  ),
+                  Text('${history.documents.length} documents',
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.textHint)),
+                  sortMenu,
                 ],
               ),
             ),
-
-            // List
             Expanded(
               child: history.isLoading
                   ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
                   : history.errorMessage != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, color: AppColors.error, size: 48),
-                              const SizedBox(height: 16),
-                              Text(history.errorMessage!, style: GoogleFonts.inter(color: AppColors.textPrimary)),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () => context.read<HistoryProvider>().loadHistory(),
-                                style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: AppColors.navy),
-                                child: const Text('Retry'),
-                              ),
-                            ],
-                          ),
-                        )
+                      ? errorWidget
                       : history.documents.isEmpty
-                          ? _EmptyState()
+                          ? EmptyStateWidget(
+                              icon: Icons.folder_copy_outlined,
+                              title: 'No documents yet',
+                              description: 'Upload your first contract or policy to generate an AI summary.',
+                            )
                           : ListView.builder(
                               padding: const EdgeInsets.symmetric(horizontal: 20),
                               itemCount: history.documents.length,
@@ -143,7 +338,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     onTap: () => _showDocumentActions(context, doc),
                                     onDelete: () => _deleteDoc(context, doc),
                                   ),
-                                ).animate(delay: Duration(milliseconds: i * 60)).fadeIn().slideX(begin: 0.05, end: 0);
+                                );
                               },
                             ),
             ),
@@ -156,12 +351,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void _deleteDoc(BuildContext context, DocumentModel doc) async {
     final success = await context.read<HistoryProvider>().deleteDocument(doc.id);
     if (success && context.mounted) {
-      // Recalculate usage immediately by fetching updated user profile
       await context.read<AuthProvider>().checkInitialAuth();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Document deleted from database and storage', style: GoogleFonts.inter(color: Colors.white)),
+          content: Text('Document deleted from database and storage',
+              style: GoogleFonts.inter(color: Colors.white)),
           backgroundColor: AppColors.success,
         ),
       );
@@ -206,13 +401,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Generating report', style: GoogleFonts.inter(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+              Text('Generating report',
+                  style: GoogleFonts.inter(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
               const SizedBox(height: 16),
               Consumer<HistoryProvider>(
                 builder: (context, provider, _) {
                   return Column(
                     children: [
-                      LinearProgressIndicator(value: provider.downloadProgress > 0 ? provider.downloadProgress : null, color: AppColors.gold, backgroundColor: AppColors.cardMid),
+                      LinearProgressIndicator(
+                          value: provider.downloadProgress > 0 ? provider.downloadProgress : null,
+                          color: AppColors.gold,
+                          backgroundColor: AppColors.cardMid),
                       const SizedBox(height: 12),
                       Text(
                         provider.downloadProgress > 0
@@ -272,7 +471,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppColors.cardDark,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -284,11 +483,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     height: 4,
                     decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
                   ),
-                ).animate().fadeIn(duration: 250.ms),
+                ),
                 const SizedBox(height: 24),
-                Text('Choose report format', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text('Choose report format',
+                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                 const SizedBox(height: 8),
-                Text('A summarized AI report will be saved to your Downloads folder.', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+                Text('A summarized AI report will be saved to your Downloads folder.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
                 const SizedBox(height: 20),
                 ...formats.map((format) {
                   return _ReportFormatItem(
@@ -333,7 +534,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: AppColors.cardDark,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -341,14 +542,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Center(
               child: Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
               ),
             ),
             const SizedBox(height: 24),
-            Text(doc.name, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(doc.name,
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
             const SizedBox(height: 24),
-            
             _ActionItem(
               icon: Icons.folder_open,
               label: 'Open Document',
@@ -384,6 +588,130 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             const SizedBox(height: 16),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// Stateful Table Row with hover highlights for desktop
+class _DesktopTableRow extends StatefulWidget {
+  final DocumentModel document;
+  final VoidCallback onTap;
+  final VoidCallback onActionMenu;
+
+  const _DesktopTableRow({
+    required this.document,
+    required this.onTap,
+    required this.onActionMenu,
+  });
+
+  @override
+  State<_DesktopTableRow> createState() => _DesktopTableRowState();
+}
+
+class _DesktopTableRowState extends State<_DesktopTableRow> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = widget.document;
+    final String formattedDate = DateFormat('MMM dd, yyyy').format(doc.uploadedAt);
+
+    IconData typeIcon = Icons.insert_drive_file_outlined;
+    if (doc.type == DocumentType.pdf) typeIcon = Icons.picture_as_pdf_outlined;
+    if (doc.type == DocumentType.docx) typeIcon = Icons.description_outlined;
+    if (doc.type == DocumentType.image) typeIcon = Icons.image_outlined;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: _isHovered ? AppColors.border.withValues(alpha: 0.15) : Colors.transparent,
+            border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+          ),
+          child: Row(
+            children: [
+              // Column 1: Document Details
+              Expanded(
+                flex: 4,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardMid,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Icon(typeIcon, color: AppColors.gold, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        doc.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: _isHovered ? AppColors.gold : AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Column 2: Size & Type
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '${doc.sizeInMB.toStringAsFixed(1)} MB • ${doc.typeLabel}',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ),
+
+              // Column 3: Date Uploaded
+              Expanded(
+                flex: 2,
+                child: Text(
+                  formattedDate,
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ),
+
+              // Column 4: Risk assessment
+              Expanded(
+                flex: 2,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: StatusChip(
+                    label: doc.riskLabel,
+                    color: doc.riskColor,
+                  ),
+                ),
+              ),
+
+              // Column 5: Action Popup Trigger
+              Container(
+                width: 120,
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  color: AppColors.textHint,
+                  hoverColor: AppColors.gold.withValues(alpha: 0.1),
+                  onPressed: widget.onActionMenu,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -471,72 +799,25 @@ class _FilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? AppColors.gold;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? c.withValues(alpha: 0.15) : AppColors.cardDark,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? c : AppColors.border),
-        ),
-        child: Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? c : AppColors.textSecondary)),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  color: AppColors.cardDark,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-              ),
-              Positioned(
-                top: 18,
-                left: 18,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(color: AppColors.gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
-              Positioned(
-                bottom: 18,
-                right: 18,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(color: AppColors.gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              Container(
-                width: 92,
-                height: 92,
-                decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.border)),
-                child: const Icon(Icons.folder_open, color: AppColors.gold, size: 42),
-              ),
-            ],
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? c.withValues(alpha: 0.15) : AppColors.cardDark,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: isSelected ? c : AppColors.border),
           ),
-          const SizedBox(height: 20),
-          Text('No documents yet', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 8),
-          Text('Upload your first contract or policy to generate an AI summary.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
-        ],
+          child: Text(label,
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? c : AppColors.textSecondary)),
+        ),
       ),
     );
   }

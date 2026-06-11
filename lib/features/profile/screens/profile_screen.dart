@@ -13,6 +13,7 @@ import 'package:lexguard_ai/features/profile/screens/privacy_policy_screen.dart'
 import 'package:lexguard_ai/features/profile/screens/about_screen.dart';
 import 'package:lexguard_ai/features/profile/screens/settings_screen.dart';
 import 'package:lexguard_ai/features/profile/screens/edit_profile_screen.dart';
+import 'package:lexguard_ai/widgets/common/desktop_design_system.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -25,7 +26,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Refresh live stats every time the Profile tab is shown
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshStats();
     });
@@ -34,15 +34,236 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    context.watch<ProfileProvider>(); // watch for dark mode toggle
+    context.watch<ProfileProvider>(); 
     final user = auth.user;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 900;
 
+    // Statistics Row
+    Widget statsRow = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        _StatItem(label: 'Documents', value: '${user?.documentsAnalyzed ?? 0}'),
+        Container(width: 1, height: 36, color: AppColors.border),
+        _StatItem(label: 'High Risk', value: '${user?.highRiskCount ?? 0}'),
+        Container(width: 1, height: 36, color: AppColors.border),
+        _StatItem(label: 'AI Chats', value: '${user?.aiChatCount ?? 0}'),
+      ],
+    );
+
+    // Storage Usage Indicator
+    Widget storageWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Storage Usage', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            Text(
+              '${user?.storageUsedMB.toStringAsFixed(1) ?? '0.0'} MB / ${user?.storageLimitMB.toStringAsFixed(0) ?? '10'} MB',
+              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: user?.storagePercentage ?? 0.0,
+            backgroundColor: AppColors.border,
+            valueColor: const AlwaysStoppedAnimation(AppColors.gold),
+            minHeight: 6,
+          ),
+        ),
+        if (user != null && user.storageUsedMB >= user.storageLimitMB) ...[  
+          const SizedBox(height: 8),
+          Text(
+            'Storage limit reached. Delete files to continue.',
+            style: GoogleFonts.inter(fontSize: 10, color: AppColors.error, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ],
+    );
+
+    // Account Summary Details Card
+    Widget accountCard = DashboardCard(
+      child: Column(
+        children: [
+          // Avatar
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: AppColors.goldGradient),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: AppColors.gold.withValues(alpha: 0.2), blurRadius: 16, spreadRadius: 2)
+              ],
+              image: user?.avatarUrl != null
+                  ? DecorationImage(image: NetworkImage(user!.avatarUrl!), fit: BoxFit.cover)
+                  : null,
+            ),
+            child: user?.avatarUrl == null
+                ? Center(
+                    child: Text(
+                      user?.initials ?? 'AJ',
+                      style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.navy),
+                    ),
+                  )
+                : null,
+          ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
+          const SizedBox(height: 16),
+          Text(
+            user?.name ?? 'Alex Johnson',
+            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            user?.email ?? 'user@example.com',
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          if (user?.createdAt != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.calendar_today_outlined, size: 11, color: AppColors.textHint),
+                const SizedBox(width: 6),
+                Text(
+                  'Joined ${_formatMemberSince(user!.createdAt)}',
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+                ),
+              ],
+            ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: AppColors.goldGradient),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '⭐ ${user?.subscriptionPlan ?? 'Pro'} Plan',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.navy),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Divider(height: 1),
+          const SizedBox(height: 20),
+          statsRow,
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 20),
+          storageWidget,
+        ],
+      ),
+    );
+
+    // List of configuration items
+    Widget menuItems = Column(
+      children: [
+        _MenuItem(
+          icon: Icons.person_outline,
+          label: 'Edit Profile',
+          subtitle: 'Update your account name and avatar info',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen())),
+        ),
+        _MenuItem(
+          icon: Icons.settings_outlined,
+          label: 'System Settings',
+          subtitle: 'Configure dark mode and sound alerts',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+        ),
+        _MenuItem(
+          icon: Icons.security_outlined,
+          label: 'Change Password',
+          subtitle: 'Keep your login credentials secure',
+          onTap: () => _showChangePasswordModal(context),
+        ),
+        _MenuItem(
+          icon: Icons.credit_card_outlined,
+          label: 'Billing & Plan',
+          subtitle: 'Manage invoices and active subscriptions',
+          onTap: () {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Subscription coming soon!')));
+          },
+        ),
+        _MenuItem(
+          icon: Icons.help_outline_rounded,
+          label: 'Help & Technical Support',
+          subtitle: 'File issues or contact engineering',
+          onTap: () => _launchSupportEmail(context),
+        ),
+        _MenuItem(
+          icon: Icons.privacy_tip_outlined,
+          label: 'Privacy Policy',
+          subtitle: 'Review document retention policies',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
+        ),
+        _MenuItem(
+          icon: Icons.info_outline_rounded,
+          label: 'About LexGuard AI',
+          subtitle: 'Release metadata & information',
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen())),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              await context.read<AuthProvider>().logout();
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: AppColors.error),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
+            label: Text(
+              'Sign Out of Session',
+              style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (isDesktop) {
+      // Desktop Premium Two-Column Layout
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left Column: Account Profile & Storage metrics
+              Expanded(
+                flex: 5,
+                child: accountCard.animate().fadeIn(duration: 400.ms),
+              ),
+              const SizedBox(width: 28),
+              // Right Column: Settings configuration buttons
+              Expanded(
+                flex: 7,
+                child: menuItems.animate(delay: 150.ms).fadeIn(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mobile Layout fallback
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Header gradient
+            // Header gradient for mobile
             Container(
               width: double.infinity,
               decoration: const BoxDecoration(
@@ -54,7 +275,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
                   child: Column(
                     children: [
-                      // Avatar
                       Container(
                         width: 90, height: 90,
                         decoration: BoxDecoration(
@@ -105,7 +325,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            // Stats Row
+            // Mobile stats bar overlay
             Transform.translate(
               offset: const Offset(0, -20),
               child: Padding(
@@ -113,88 +333,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.border)),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _StatItem(label: 'Documents', value: '${user?.documentsAnalyzed ?? 0}'),
-                      Container(width: 1, height: 40, color: AppColors.border),
-                      _StatItem(label: 'High Risk', value: '${user?.highRiskCount ?? 0}'),
-                      Container(width: 1, height: 40, color: AppColors.border),
-                      _StatItem(label: 'AI Chats', value: '${user?.aiChatCount ?? 0}'),
-                    ],
-                  ),
+                  child: statsRow,
                 ),
               ),
             ).animate(delay: 100.ms).fadeIn().slideY(begin: 0.3, end: 0),
 
-            // Storage
+            // Mobile storage meter
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text('Storage Used', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    Text(
-                      '${user?.storageUsedMB.toStringAsFixed(1) ?? '0.0'} MB / ${user?.storageLimitMB.toStringAsFixed(0) ?? '10'} MB',
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ]),
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(
-                    value: user?.storagePercentage ?? 0.0,
-                    backgroundColor: AppColors.border,
-                    valueColor: const AlwaysStoppedAnimation(AppColors.gold),
-                    minHeight: 6,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  if (user != null && user.storageUsedMB >= user.storageLimitMB) ...[  
-                    const SizedBox(height: 8),
-                    Text(
-                      'Storage limit reached. Delete files to continue.',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.error, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ]),
+                child: storageWidget,
               ),
             ).animate(delay: 150.ms).fadeIn(),
 
-            // Settings Menu
+            // Mobile list items
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(children: [
-                _MenuItem(icon: Icons.person_outline, label: 'Edit Profile', subtitle: 'Update personal details', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()))),
-                _MenuItem(icon: Icons.settings_outlined, label: 'Settings', subtitle: 'App preferences & notifications', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
-                _MenuItem(icon: Icons.security_outlined, label: 'Security', subtitle: 'Password & authentication', onTap: () => _showChangePasswordModal(context)),
-                _MenuItem(icon: Icons.credit_card_outlined, label: 'Subscription', subtitle: 'Manage your Pro plan', onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Subscription management coming soon!')));
-                }),
-                _MenuItem(icon: Icons.help_outline_rounded, label: 'Help & Support', subtitle: 'FAQs and contact us', onTap: () => _launchSupportEmail(context)),
-                _MenuItem(icon: Icons.privacy_tip_outlined, label: 'Privacy Policy', subtitle: 'Read our privacy terms', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()))),
-                _MenuItem(icon: Icons.info_outline_rounded, label: 'About LexGuard AI', subtitle: 'Version 1.0.0', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()))),
-
-                const SizedBox(height: 8),
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await context.read<AuthProvider>().logout();
-                      if (context.mounted) {
-                        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-                      }
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.error),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    icon: const Icon(Icons.logout_rounded, color: AppColors.error),
-                    label: Text('Logout', style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.w600, fontSize: 15)),
-                  ),
-                ),
-              ]),
+              child: menuItems,
             ).animate(delay: 200.ms).fadeIn(),
 
             const SizedBox(height: 40),
@@ -213,12 +370,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Formats a [DateTime] as "DD MMM YYYY" for the "Member Since" label.
   static String _formatMemberSince(DateTime date) {
     return DateFormat('dd MMM yyyy').format(date.toLocal());
   }
 
-  /// Opens the device email app pre-filled with support details.
   static Future<void> _launchSupportEmail(BuildContext context) async {
     const address = 'tvijay1098@gmail.com';
     const subject = 'LexGuard AI Support Request';
@@ -301,7 +456,7 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.only(
         left: 24,
@@ -434,21 +589,24 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
-        child: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.navyAccent, borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: AppColors.gold, size: 20)),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            Text(subtitle, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
-          ])),
-          Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
-        ]),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: AppColors.cardDark, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+          child: Row(children: [
+            Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.navyAccent, borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: AppColors.gold, size: 20)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              Text(subtitle, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+            ])),
+            Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          ]),
+        ),
       ),
     );
   }
