@@ -60,7 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text('Storage Usage', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
             Text(
-              '${user?.storageUsedMB.toStringAsFixed(1) ?? '0.0'} MB / ${user?.storageLimitMB.toStringAsFixed(0) ?? '10'} MB',
+              '${user?.storageUsedMB.toStringAsFixed(1) ?? '0.0'} MB / ${user?.storageLimitMB.toStringAsFixed(0) ?? '20'} MB',
               style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
             ),
           ],

@@ -23,7 +23,7 @@ class UserModel {
     this.documentsAnalyzed = 0,
     this.highRiskCount = 0,
     this.storageUsedMB = 0,
-    this.storageLimitMB = 10,
+    this.storageLimitMB = 20,
     required this.createdAt,
     this.isVerified = false,
     this.aiChatCount = 0,
@@ -79,7 +79,7 @@ class UserModel {
       documentsAnalyzed: json['documents_analyzed'] ?? 0,
       highRiskCount: json['high_risk_count'] ?? 0,
       storageUsedMB: (json['storage_used_mb'] ?? 0).toDouble(),
-      storageLimitMB: (json['storage_limit_mb'] ?? 10).toDouble(),
+      storageLimitMB: (json['storage_limit_mb'] ?? 20).toDouble(),
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at']) 
           : DateTime.now(),
