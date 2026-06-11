@@ -65,13 +65,18 @@ class AppColors {
       : const Color(0xFFDDE3EE);
 
   // ── Adaptive Text Colors ─────────────────────────────────────────────────
+  static const Color textPrimaryLight   = Color(0xFF0A1628);
+  static const Color textSecondaryLight = Color(0xFF4A6490);
+  static const Color textPrimaryDark    = Color(0xFFF0F4FF);
+  static const Color textSecondaryDark  = Color(0xFF8BA3CC);
+
   static Color get textPrimary => _isDark
-      ? const Color(0xFFF0F4FF)
-      : const Color(0xFF0A1628);
+      ? textPrimaryDark
+      : textPrimaryLight;
 
   static Color get textSecondary => _isDark
-      ? const Color(0xFF8BA3CC)
-      : const Color(0xFF4A6490);
+      ? textSecondaryDark
+      : textSecondaryLight;
 
   static Color get textHint => _isDark
       ? const Color(0xFF4A6490)
