@@ -109,16 +109,19 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return LoadingOverlay(
       isLoading: auth.authState == AuthState.loading,
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF080F1E), Color(0xFF0A1628)],
+              colors: isDark
+                  ? const [Color(0xFF080F1E), Color(0xFF0A1628)]
+                  : const [Color(0xFFF5F7FA), Color(0xFFE5EAF2)],
             ),
           ),
           child: SafeArea(

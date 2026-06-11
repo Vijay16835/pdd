@@ -52,17 +52,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
           // Background gradient
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF080F1E), Color(0xFF0A1628)],
+                colors: isDark
+                    ? const [Color(0xFF080F1E), Color(0xFF0A1628)]
+                    : const [Color(0xFFF5F7FA), Color(0xFFE5EAF2)],
               ),
             ),
           ),
