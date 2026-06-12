@@ -209,7 +209,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     const SizedBox(height: 40),
 
                     if (_isEmailNotRegistered) ...[
-                      // Show: "This email is not registered."
+                      // Show: "Email not registered. Please create an account."
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -226,7 +226,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'This email is not registered.',
+                                    'Email not registered. Please create an account.',
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
@@ -238,7 +238,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'The email address "${_emailCtrl.text.trim()}" is not registered in our system. Please check for spelling mistakes, or choose Register Now below.',
+                              'The email address "${_emailCtrl.text.trim()}" is not registered. Please create a new account or log in with a different email.',
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,

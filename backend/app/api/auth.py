@@ -355,19 +355,21 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
     start_time = time.time()
     email = data.email.lower().strip()
     logger.info(f"[SEND_RESET_OTP] Request received for {email}")
+    logger.info(f"[SEND_RESET_OTP] Email checked: '{email}'")
     
     try:
         user_data = db.get_user_by_email(email)
         if not user_data:
-            logger.warning(f"[SEND_RESET_OTP] Failed reset attempt: Email '{email}' is not registered in the database.")
-            raise HTTPException(status_code=404, detail="This email is not registered.")
+            logger.warning(f"[SEND_RESET_OTP] User not found: Email '{email}' is not registered in the database.")
+            logger.info(f"[SEND_RESET_OTP] OTP not sent: User for email '{email}' is not found.")
+            raise HTTPException(status_code=404, detail="Email not registered. Please create an account.")
         
-        logger.info(f"[SEND_RESET_OTP] Email validated")
+        logger.info(f"[SEND_RESET_OTP] User found: Email '{email}' exists.")
         
         # Generate OTP
         otp_code = "".join(random.choices(string.digits, k=6))
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-        logger.info(f"[SEND_RESET_OTP] OTP generated: '{otp_code}' for '{email}'")
+        logger.info(f"[SEND_RESET_OTP] OTP generated for '{email}'")
         
         saved = db.save_otp(
             email=email,
@@ -377,12 +379,14 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
         )
         if not saved:
             logger.error(f"[SEND_RESET_OTP] Database save failure: db.save_otp returned False for '{email}'")
+            logger.info(f"[SEND_RESET_OTP] OTP not sent: Failed to save to database for '{email}'.")
             raise HTTPException(status_code=500, detail="Failed to save password reset code to database.")
-        logger.info(f"[SEND_RESET_OTP] OTP stored")
+        logger.info(f"[SEND_RESET_OTP] OTP stored in database")
         
         # Send Password Reset OTP via email in the background
         logger.info(f"[SEND_RESET_OTP] Dispatching email_service.send_password_reset_email in background to '{email}'...")
         background_tasks.add_task(send_email_in_background, email, otp_code)
+        logger.info(f"[SEND_RESET_OTP] OTP sent: Password reset OTP dispatched for '{email}'.")
         return {"success": True, "message": "Verification code sent to your email."}
             
     except HTTPException as he:
