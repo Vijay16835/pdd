@@ -1,7 +1,3 @@
-"""
-Document Processing Service for LexGuard AI
-Handles text extraction from PDF, DOCX, TXT, and images.
-"""
 import os
 import traceback
 from typing import Optional
@@ -21,6 +17,11 @@ def get_supabase():
     return _supabase_client
 
 
+class TextExtractionError(Exception):
+    """Custom exception raised when text extraction fails."""
+    pass
+
+
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract text from PDF files using pdfplumber."""
     try:
@@ -35,9 +36,17 @@ def extract_text_from_pdf(file_path: str) -> str:
         
         # If no text extracted (scanned PDF), try OCR
         if not text.strip():
-            text = extract_text_from_image(file_path)
+            try:
+                text = extract_text_from_image(file_path)
+            except Exception as ocr_err:
+                raise TextExtractionError("Image OCR failed") from ocr_err
+            
+            if not text.strip():
+                raise TextExtractionError("Empty document content")
         
         return text.strip()
+    except TextExtractionError:
+        raise
     except Exception as e:
         print(f"PDF extraction error: {e}")
         traceback.print_exc()
@@ -52,10 +61,14 @@ def extract_text_from_pdf(file_path: str) -> str:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n\n"
+            if not text.strip():
+                raise TextExtractionError("Empty document content")
             return text.strip()
+        except TextExtractionError:
+            raise
         except Exception as e2:
             print(f"PyPDF2 fallback failed: {e2}")
-            return ""
+            raise TextExtractionError("PDF text extraction failed") from e2
 
 
 def extract_text_from_docx(file_path: str) -> str:
@@ -76,21 +89,31 @@ def extract_text_from_docx(file_path: str) -> str:
                 if row_text:
                     text += row_text + "\n"
         
+        if not text.strip():
+            raise TextExtractionError("Empty document content")
+            
         return text.strip()
+    except TextExtractionError:
+        raise
     except Exception as e:
         print(f"DOCX extraction error: {e}")
         traceback.print_exc()
-        return ""
+        raise TextExtractionError("DOCX text extraction failed") from e
 
 
 def extract_text_from_txt(file_path: str) -> str:
     """Extract text from plain text files."""
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read().strip()
+            text = f.read().strip()
+        if not text:
+            raise TextExtractionError("Empty document content")
+        return text
+    except TextExtractionError:
+        raise
     except Exception as e:
         print(f"TXT extraction error: {e}")
-        return ""
+        raise TextExtractionError("Empty document content") from e
 
 
 def extract_text_from_image(file_path: str) -> str:
@@ -98,6 +121,7 @@ def extract_text_from_image(file_path: str) -> str:
     text = ""
     
     # Try EasyOCR first
+    easyocr_failed = False
     try:
         # pyrefly: ignore [missing-import]
         import easyocr
@@ -106,10 +130,9 @@ def extract_text_from_image(file_path: str) -> str:
         text = "\n".join(results)
         if text.strip():
             return text.strip()
-    except ImportError:
-        pass
     except Exception as e:
         print(f"EasyOCR failed: {e}")
+        easyocr_failed = True
     
     # Fallback to pytesseract
     try:
@@ -125,13 +148,21 @@ def extract_text_from_image(file_path: str) -> str:
             
         img = Image.open(file_path)
         text = pytesseract.image_to_string(img)
-        return text.strip()
-    except ImportError:
+        if text.strip():
+            return text.strip()
+    except ImportError as ie:
         print("Neither EasyOCR nor pytesseract is installed. OCR unavailable.")
+        if easyocr_failed:
+            raise TextExtractionError("Image OCR failed") from ie
     except Exception as e:
         print(f"Pytesseract failed: {e}")
+        if easyocr_failed:
+            raise TextExtractionError("Image OCR failed") from e
     
-    return text
+    if not text.strip():
+        raise TextExtractionError("Empty document content")
+        
+    return text.strip()
 
 
 def extract_text(file_path: str, file_type: str) -> str:
@@ -147,7 +178,7 @@ def extract_text(file_path: str, file_type: str) -> str:
     elif file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
         return extract_text_from_image(file_path)
     else:
-        raise ValueError(f"Unsupported file type: {file_type}")
+        raise TextExtractionError("Unsupported file type")
 
 
 def get_file_extension(filename: str) -> str:

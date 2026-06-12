@@ -154,6 +154,18 @@ class FirebaseService:
             cur = conn.cursor()
             cur.execute("SELECT 1;")
             result = cur.fetchone()
+            
+            # Ensure users and documents schema is migrated
+            try:
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR(50);")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER;")
+                cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS error_message TEXT;")
+                conn.commit()
+                logger.info("[Database Service] PostgreSQL schema migration complete.")
+            except Exception as schema_err:
+                logger.warning(f"[Database Service] Non-blocking schema migration warning: {schema_err}")
+                conn.rollback()
+                
             cur.close()
             conn.close()
             if result and result[0] == 1:
@@ -252,7 +264,7 @@ class FirebaseService:
             logger.error(f"Error getting user by ID {user_id}: {e}")
             return None
 
-    def create_user(self, email: str, password_hash: str, full_name: str, is_verified: bool = False, auth_provider: str = "email", firebase_uid: str = None) -> Dict[str, Any]:
+    def create_user(self, email: str, password_hash: str, full_name: str, is_verified: bool = False, auth_provider: str = "email", firebase_uid: str = None, date_of_birth: str = None, age: int = None) -> Dict[str, Any]:
         """Create user in Firebase Auth and Firestore users collection."""
         email_clean = email.lower().strip()
         user_id = firebase_uid
@@ -287,6 +299,8 @@ class FirebaseService:
             "is_verified": is_verified,
             "auth_provider": auth_provider,
             "profile_image": None,
+            "date_of_birth": date_of_birth,
+            "age": age,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "settings": {
@@ -308,13 +322,15 @@ class FirebaseService:
                 cur = conn.cursor()
                 try:
                     cur.execute("""
-                        INSERT INTO users (id, full_name, email, hashed_password, is_verified, auth_provider)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO users (id, full_name, email, hashed_password, is_verified, auth_provider, date_of_birth, age)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (email) DO UPDATE SET 
                             id = EXCLUDED.id,
                             hashed_password = EXCLUDED.hashed_password,
-                            full_name = EXCLUDED.full_name
-                    """, (user_id, full_name, email_clean, password_hash, is_verified, auth_provider))
+                            full_name = EXCLUDED.full_name,
+                            date_of_birth = EXCLUDED.date_of_birth,
+                            age = EXCLUDED.age
+                    """, (user_id, full_name, email_clean, password_hash, is_verified, auth_provider, date_of_birth, age))
                     conn.commit()
                 finally:
                     cur.close()
@@ -493,7 +509,7 @@ class FirebaseService:
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT id, name, path, type, size_in_mb, status, uploaded_at, 
-                           extracted_text, document_type, risk_score, risk_level, summary, analyzed_at, user_id
+                           extracted_text, document_type, risk_score, risk_level, summary, analyzed_at, user_id, error_message
                     FROM documents 
                     WHERE id = %s;
                 """, (document_id,))
@@ -533,7 +549,7 @@ class FirebaseService:
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT id, name, path, type, size_in_mb, status, uploaded_at, 
-                           extracted_text, document_type, risk_score, risk_level, summary, analyzed_at, user_id
+                           extracted_text, document_type, risk_score, risk_level, summary, analyzed_at, user_id, error_message
                     FROM documents 
                     WHERE user_id = %s
                     ORDER BY uploaded_at DESC;
@@ -602,7 +618,8 @@ class FirebaseService:
                     "document_type": "%s",
                     "risk_score": "%s",
                     "risk_level": "%s",
-                    "summary": "%s"
+                    "summary": "%s",
+                    "error_message": "%s"
                 }
                 mapping = {"size_mb": "size_in_mb"}
                 set_clauses = []

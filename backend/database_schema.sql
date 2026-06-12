@@ -14,6 +14,8 @@ CREATE TABLE users (
     is_verified BOOLEAN DEFAULT FALSE,
     auth_provider VARCHAR(50) DEFAULT 'email',
     profile_image VARCHAR(255),
+    date_of_birth VARCHAR(50),
+    age INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

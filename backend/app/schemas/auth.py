@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
+    date_of_birth: str
 
     @field_validator('password')
     @classmethod
@@ -18,6 +19,18 @@ class UserCreate(BaseModel):
             raise ValueError("Password must be at least 8 characters long")
         if len(v.encode('utf-8')) > 72:
             raise ValueError("Password cannot be longer than 72 bytes")
+        return v
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_dob(cls, v: str) -> str:
+        from datetime import datetime
+        try:
+            dob = datetime.strptime(v, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("Invalid date of birth format. Use YYYY-MM-DD.")
+        if dob > datetime.now().date():
+            raise ValueError("Date of birth cannot be in the future.")
         return v
 
 class UserLogin(BaseModel):

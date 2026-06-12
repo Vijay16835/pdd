@@ -21,6 +21,7 @@ router = APIRouter()
 async def run_ai_analysis(document_id: str):
     """Background task: extract text from document and run Groq AI analysis."""
     from app.services.firebase_service import firebase_service
+    from app.services.document_service import TextExtractionError
     db = firebase_service
     
     try:
@@ -33,6 +34,7 @@ async def run_ai_analysis(document_id: str):
         
         # Step 1: Extract text
         db.update_document(document_id, {"status": "extracting"})
+        print(f"[ANALYSIS_STARTED] Analysis started for document {document_id}")
         
         # Check if file exists locally, if not download from Storage
         local_path = doc.path
@@ -53,20 +55,29 @@ async def run_ai_analysis(document_id: str):
                 download_success = False
             if not download_success:
                 print(f"Failed to download file from Storage for {document_id}")
-                db.update_document(document_id, {"status": "failed"})
+                db.update_document(document_id, {"status": "failed", "error_message": "Supabase upload failed"})
                 return
             # Update path locally
             db.update_document(document_id, {"path": local_path})
             doc.path = local_path
             
         file_ext = get_file_extension(doc.name)
-        extracted_text = extract_text(local_path, file_ext)
-        
-        if not extracted_text or not extracted_text.strip():
-            db.update_document(document_id, {"status": "failed", "extracted_text": ""})
-            print(f"No text extracted from document {document_id}")
+        try:
+            extracted_text = extract_text(local_path, file_ext)
+            if not extracted_text or not extracted_text.strip():
+                raise TextExtractionError("Empty document content")
+        except TextExtractionError as ete:
+            error_reason = str(ete)
+            db.update_document(document_id, {"status": "failed", "error_message": error_reason})
+            print(f"[TEXT_EXTRACTION_FAILED] Text extraction failed for {document_id}: {error_reason}")
+            return
+        except Exception as ex:
+            error_reason = "PDF text extraction failed" if file_ext == "pdf" else "DOCX text extraction failed" if file_ext == "docx" else "Image OCR failed" if file_ext in ['jpg','jpeg','png'] else "Empty document content"
+            db.update_document(document_id, {"status": "failed", "error_message": error_reason})
+            print(f"[TEXT_EXTRACTION_FAILED] Text extraction failed for {document_id}: {ex}")
             return
             
+        print(f"[TEXT_EXTRACTION_SUCCESS] Text extracted successfully for {document_id}")
         db.update_document(document_id, {
             "extracted_text": extracted_text,
             "status": "analyzing"
@@ -82,9 +93,10 @@ async def run_ai_analysis(document_id: str):
         # Step 2: Run Groq AI analysis
         try:
             analysis_result = await groq_service.analyze_document(extracted_text)
+            print(f"[AI_ANALYSIS_SUCCESS] AI analysis completed for {document_id}")
         except Exception as e:
             print(f"Groq analysis failed for {document_id}: {e}")
-            db.update_document(document_id, {"status": "failed"})
+            db.update_document(document_id, {"status": "failed", "error_message": "AI service unavailable"})
             return
         
         # Step 3: Save analysis results to Document
@@ -94,6 +106,7 @@ async def run_ai_analysis(document_id: str):
             "summary": analysis_result.get("summary", ""),
             "document_type": analysis_result.get("document_type", "Unknown"),
             "status": "completed",
+            "error_message": None,
             "analyzed_at": datetime.now(timezone.utc).isoformat()
         })
         
@@ -140,7 +153,8 @@ async def run_ai_analysis(document_id: str):
                             risk_score = %s, 
                             risk_level = %s, 
                             summary = %s, 
-                            analyzed_at = %s
+                            analyzed_at = %s,
+                            error_message = NULL
                         WHERE id = %s
                     """, (
                         "completed",
@@ -194,9 +208,9 @@ async def run_ai_analysis(document_id: str):
                         ))
                         
                     conn.commit()
+                    print(f"[DATABASE_SAVE_SUCCESS] Saved analysis and clauses to DB for {document_id}")
                 finally:
                     cur.close()
-                print(f"[OK] Successfully dual-wrote analysis and clauses for {document_id} to Supabase PostgreSQL")
         except Exception as pg_err:
             print(f"[FAIL] Failed to dual-write analysis/clauses to PostgreSQL: {pg_err}")
         finally:
@@ -209,7 +223,7 @@ async def run_ai_analysis(document_id: str):
         print(f"Background analysis error for {document_id}: {e}")
         traceback.print_exc()
         try:
-            db.update_document(document_id, {"status": "failed"})
+            db.update_document(document_id, {"status": "failed", "error_message": "Empty document content"})
             
             # Update failed status in PostgreSQL
             conn_fail = None
@@ -218,7 +232,7 @@ async def run_ai_analysis(document_id: str):
                 if conn_fail:
                     cur = conn_fail.cursor()
                     try:
-                        cur.execute("UPDATE documents SET status = 'failed' WHERE id = %s", (document_id,))
+                        cur.execute("UPDATE documents SET status = 'failed', error_message = 'Empty document content' WHERE id = %s", (document_id,))
                         conn_fail.commit()
                     finally:
                         cur.close()
@@ -244,9 +258,12 @@ async def upload_document(
     file_content = await file.read()
     is_valid, error_msg = validate_file(file.filename, len(file_content))
     if not is_valid:
+        print(f"[UPLOAD_FAILED] File validation failed for {file.filename}: {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg)
         
     size_mb = round(len(file_content) / (1024 * 1024), 2)
+    print(f"[UPLOAD_STARTED] Starting upload for file: {file.filename}, size: {size_mb} MB")
+    
     import asyncio
     try:
         used_storage_mb = await asyncio.wait_for(
@@ -258,6 +275,7 @@ async def upload_document(
         used_storage_mb = 0.0
     
     if used_storage_mb + size_mb > 20.0:
+        print(f"[UPLOAD_FAILED] Storage limit reached for user {current_user.id}")
         raise HTTPException(status_code=400, detail="Storage limit reached. Delete files to continue.")
     
     # Generate unique ID and save file locally first
@@ -274,6 +292,7 @@ async def upload_document(
     mime_type, _ = mimetypes.guess_type(file.filename)
 
     supabase = get_supabase()
+    upload_error = None
     try:
         with open(file_path, "rb") as f:
             supabase.storage.from_("legal-documents").upload(
@@ -282,11 +301,16 @@ async def upload_document(
                 file_options={"content-type": mime_type or "application/octet-stream"}
             )
         download_url = supabase.storage.from_("legal-documents").get_public_url(remote_path)
+        print(f"[STORAGE_UPLOAD_SUCCESS] File uploaded to Supabase Storage: {remote_path}")
     except Exception as e:
         print(f"Supabase upload failed: {e}")
+        upload_error = "Supabase upload failed"
         download_url = ""
         
     # Store file URL in PostgreSQL
+    status = "failed" if upload_error else "pending"
+    error_message = upload_error
+    
     conn = None
     try:
         conn = db._get_pg_conn()
@@ -294,9 +318,9 @@ async def upload_document(
             cur = conn.cursor()
             try:
                 cur.execute("""
-                    INSERT INTO documents (id, user_id, name, path, type, size_in_mb, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (doc_id, current_user.id, file.filename, download_url, file_ext, size_mb, "pending"))
+                    INSERT INTO documents (id, user_id, name, path, type, size_in_mb, status, error_message)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (doc_id, current_user.id, file.filename, download_url, file_ext, size_mb, status, error_message))
                 conn.commit()
             finally:
                 cur.close()
@@ -317,7 +341,8 @@ async def upload_document(
         "download_url": download_url or "",
         "type": file_ext,
         "size_in_mb": size_mb,
-        "status": "pending",
+        "status": status,
+        "error_message": error_message,
         "user_id": current_user.id,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "analyzed_at": None,
@@ -330,18 +355,20 @@ async def upload_document(
     
     db.create_document(doc_data)
     
-    # Trigger background analysis
-    background_tasks.add_task(run_ai_analysis, doc_id)
-    
+    if not upload_error:
+        # Trigger background analysis
+        background_tasks.add_task(run_ai_analysis, doc_id)
+        
     return {
         "success": True,
-        "message": "Document uploaded. AI analysis started.",
+        "message": "Document uploaded. AI analysis started." if not upload_error else "Document upload failed.",
         "document": {
             "id": doc_id,
             "name": file.filename,
             "type": file_ext,
             "size_mb": size_mb,
-            "status": "pending",
+            "status": status,
+            "error_message": error_message,
             "uploaded_at": doc_data["uploaded_at"]
         }
     }
@@ -367,6 +394,7 @@ async def get_documents(
                 "type": doc.get("type"),
                 "size_mb": doc.get("size_in_mb"),
                 "status": doc.get("status"),
+                "error_message": doc.get("error_message"),
                 "risk_score": doc.get("risk_score"),
                 "risk_level": doc.get("risk_level"),
                 "summary": doc.get("summary"),
@@ -442,6 +470,7 @@ async def get_document(
             "type": doc_data["type"],
             "size_mb": doc_data["size_in_mb"],
             "status": doc_data["status"],
+            "error_message": doc_data.get("error_message"),
             "risk_score": doc_data.get("risk_score"),
             "risk_level": doc_data.get("risk_level"),
             "summary": doc_data.get("summary"),
@@ -488,6 +517,7 @@ async def get_document_status(
     return {
         "success": True,
         "status": doc_data.get("status"),
+        "error_message": doc_data.get("error_message"),
         "risk_score": doc_data.get("risk_score"),
         "risk_level": doc_data.get("risk_level"),
     }

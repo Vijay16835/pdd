@@ -10,6 +10,8 @@ class User:
         self.otp_expiry = None
         self.auth_provider = "email"
         self.profile_image = None
+        self.date_of_birth = None
+        self.age = None
         self.created_at = None
         self.updated_at = None
         self.settings = None

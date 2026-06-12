@@ -39,7 +39,8 @@ async def signup(user_in: UserCreate, background_tasks: BackgroundTasks, db = De
         # Store registration data temporarily in the OTP verification record
         registration_data = {
             "full_name": user_in.full_name,
-            "password_hash": get_password_hash(user_in.password)
+            "password_hash": get_password_hash(user_in.password),
+            "date_of_birth": user_in.date_of_birth
         }
         
         # Do not store plain OTP values
@@ -200,13 +201,37 @@ async def verify_otp(data: OTPVerify, db = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Registration data not found. Please sign up again.")
             reg_data = json.loads(reg_data_str)
             
+            # Age Verification
+            dob_str = reg_data.get("date_of_birth")
+            if not dob_str:
+                raise HTTPException(status_code=400, detail="Date of birth is required to create an account.")
+            
+            try:
+                dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date of birth format. Use YYYY-MM-DD.")
+            
+            today = datetime.now(timezone.utc).date()
+            calculated_age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            
+            if calculated_age < 18:
+                # Delete OTP record so it cannot be reused
+                db.delete_otp_record(email)
+                logger.warning(f"[Auth API] Age verification failed: User '{email}' is {calculated_age} years old.")
+                raise HTTPException(
+                    status_code=400,
+                    detail="You must be at least 18 years old to use this application."
+                )
+            
             # Create user and mark is_verified = True
             user_data = db.create_user(
                 email=email,
                 password_hash=reg_data["password_hash"],
                 full_name=reg_data["full_name"],
                 is_verified=True,
-                auth_provider="email"
+                auth_provider="email",
+                date_of_birth=dob_str,
+                age=calculated_age
             )
         else:
             # For password reset or other purposes, load existing user
@@ -354,7 +379,7 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
     import time
     start_time = time.time()
     email = data.email.lower().strip()
-    logger.info(f"[SEND_RESET_OTP] Request received for {email}")
+    logger.info(f"[SEND_RESET_OTP] Email received: '{email}'")
     logger.info(f"[SEND_RESET_OTP] Email checked: '{email}'")
     
     try:
@@ -362,14 +387,14 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
         if not user_data:
             logger.warning(f"[SEND_RESET_OTP] User not found: Email '{email}' is not registered in the database.")
             logger.info(f"[SEND_RESET_OTP] OTP not sent: User for email '{email}' is not found.")
-            raise HTTPException(status_code=404, detail="Email not registered. Please create an account.")
+            raise HTTPException(status_code=404, detail="Email is not registered.")
         
         logger.info(f"[SEND_RESET_OTP] User found: Email '{email}' exists.")
         
         # Generate OTP
         otp_code = "".join(random.choices(string.digits, k=6))
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-        logger.info(f"[SEND_RESET_OTP] OTP generated for '{email}'")
+        logger.info(f"[SEND_RESET_OTP] OTP generated: '{otp_code}' for '{email}'")
         
         saved = db.save_otp(
             email=email,
