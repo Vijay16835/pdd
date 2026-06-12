@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:lexguard_ai/core/constants/api_constants.dart';
+import 'package:lexguard_ai/core/utils/file_download_helper.dart';
 
 class DownloadResult {
   final String? path;
@@ -43,7 +45,7 @@ class DocumentService {
   /// Upload a document file
   Future<Map<String, dynamic>> uploadDocument(File file) async {
     try {
-      String fileName = file.path.split(Platform.pathSeparator).last;
+      String fileName = kIsWeb ? file.path.split('/').last : file.path.split(Platform.pathSeparator).last;
       FormData formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(file.path, filename: fileName),
       });
@@ -171,6 +173,7 @@ class DocumentService {
   }
 
   Future<bool> _requestAndroidStoragePermission() async {
+    if (kIsWeb) return true;
     if (!Platform.isAndroid) return true;
 
     if (await Permission.storage.isGranted) {
@@ -191,14 +194,17 @@ class DocumentService {
   }
 
   Future<Directory> _getDownloadDirectory() async {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (kIsWeb) {
+      throw UnsupportedError('Download directory not available on Web');
+    }
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       final downloads = await getDownloadsDirectory();
       if (downloads != null) {
         return downloads;
       }
     }
 
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       final externalDirs = await getExternalStorageDirectories(type: StorageDirectory.downloads);
       if (externalDirs != null && externalDirs.isNotEmpty) {
         return externalDirs.first;
@@ -211,6 +217,9 @@ class DocumentService {
   /// Download a file at the provided URL into a temporary cache.
   Future<String?> downloadFile(String url, String fileName) async {
     try {
+      if (kIsWeb) {
+        return url;
+      }
       final dir = await getTemporaryDirectory();
       final savePath = '${dir.path}${Platform.pathSeparator}$fileName';
       final response = await _dio.get(
@@ -236,6 +245,20 @@ class DocumentService {
     String expectedFormat = 'pdf',
   }) async {
     try {
+      if (kIsWeb) {
+        final response = await _dio.get(
+          url,
+          options: Options(responseType: ResponseType.bytes, validateStatus: (status) => status != null && status < 400),
+          onReceiveProgress: onReceiveProgress,
+        );
+        final bytes = response.data as List<int>?;
+        if (bytes == null || bytes.isEmpty) {
+          return const DownloadResult(error: 'Received empty file response from server.');
+        }
+        await saveAndLaunchFile(bytes, fileName);
+        return const DownloadResult(path: 'Browser downloads folder');
+      }
+
       if (!await _requestAndroidStoragePermission()) {
         return const DownloadResult(error: 'Permission denied to save files.');
       }

@@ -7,7 +7,8 @@ import 'package:lexguard_ai/core/theme/app_colors.dart';
 import 'package:lexguard_ai/features/history/providers/history_provider.dart';
 import 'package:lexguard_ai/models/document_model.dart';
 import 'package:lexguard_ai/widgets/cards/document_card.dart';
-import 'package:lexguard_ai/features/analysis/screens/analysis_screen.dart';
+import 'package:flutter/foundation.dart';
+import 'package:lexguard_ai/features/analysis/screens/analysis_result_screen.dart';
 import 'package:lexguard_ai/features/auth/providers/auth_provider.dart';
 import 'package:lexguard_ai/features/profile/providers/profile_provider.dart';
 import 'package:lexguard_ai/widgets/common/desktop_design_system.dart';
@@ -265,7 +266,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               onTap: () => Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
-                                                    builder: (_) => AnalysisScreen(documentId: doc.id)),
+                                                    builder: (_) => AnalysisResultScreen(documentId: doc.id)),
                                               ),
                                               onActionMenu: () => _showDocumentActions(context, doc),
                                             );
@@ -437,12 +438,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context.read<AuthProvider>().refreshStats();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Report downloaded to: $path', style: GoogleFonts.inter(color: Colors.white)),
+          content: Text(
+            kIsWeb ? 'Report download initiated successfully.' : 'Report downloaded to: $path',
+            style: GoogleFonts.inter(color: Colors.white),
+          ),
           backgroundColor: AppColors.success,
         ),
       );
 
-      await OpenFilex.open(path);
+      if (!kIsWeb) {
+        await OpenFilex.open(path);
+      }
     } else {
       final errorMessage = provider.errorMessage ?? 'Unable to download report. Please try again.';
       ScaffoldMessenger.of(context).showSnackBar(
@@ -567,7 +573,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               label: 'View Analysis',
               onTap: () {
                 Navigator.pop(ctx);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisScreen(documentId: doc.id)));
+                Navigator.push(context, MaterialPageRoute(builder: (_) => AnalysisResultScreen(documentId: doc.id)));
               },
             ),
             _ActionItem(

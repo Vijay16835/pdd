@@ -501,7 +501,7 @@ class AuthProvider extends ChangeNotifier {
     // Assuming backend will support this soon, but for now we'll just sign out
     try {
       await Future.delayed(const Duration(seconds: 1));
-      logout();
+      await logout();
       return true;
     } catch (e) {
       _errorMessage = 'Failed to delete account.';
@@ -570,7 +570,7 @@ class AuthProvider extends ChangeNotifier {
 
       if (token != null && _isTokenExpired(token)) {
         debugPrint('AuthProvider: Cached token expired locally. Clearing saved auth.');
-        logout();
+        await logout();
         return;
       }
       
@@ -601,7 +601,7 @@ class AuthProvider extends ChangeNotifier {
                 }
               }
             }
-            logout();
+            await logout();
           } else {
             // Transient network/server error: do NOT log out or delete tokens
             _authState = AuthState.unauthenticated;
@@ -649,6 +649,21 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('AuthProvider: Backend health check exception: $e');
       return false;
+    }
+  }
+
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
     }
   }
 }

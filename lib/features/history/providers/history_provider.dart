@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lexguard_ai/models/document_model.dart';
 import 'package:lexguard_ai/services/document_service.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum DocumentSortOption { date, type, status }
 
@@ -20,6 +22,20 @@ class HistoryProvider extends ChangeNotifier {
   bool _isDownloading = false;
   double _downloadProgress = 0;
   String? _errorMessage;
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
 
   List<DocumentModel> get documents => _filteredDocuments;
   bool get isLoading => _isLoading;
@@ -122,6 +138,10 @@ class HistoryProvider extends ChangeNotifier {
         return null;
       }
 
+      if (kIsWeb) {
+        return result.path;
+      }
+
       final file = File(result.path!);
       if (!file.existsSync()) {
         _errorMessage = 'Downloaded file is missing after save.';
@@ -144,6 +164,14 @@ class HistoryProvider extends ChangeNotifier {
     notifyListeners();
     try {
       String filePath = path;
+
+      if (kIsWeb) {
+        if (path.startsWith('http')) {
+          await launchUrl(Uri.parse(path));
+          return true;
+        }
+        return false;
+      }
 
       if (path.startsWith('http')) {
         final uri = Uri.parse(path);
