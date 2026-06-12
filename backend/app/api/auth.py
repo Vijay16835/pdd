@@ -359,8 +359,8 @@ async def send_reset_otp(data: ForgotPassword, background_tasks: BackgroundTasks
     try:
         user_data = db.get_user_by_email(email)
         if not user_data:
-            logger.warning(f"[SEND_RESET_OTP] Email validation failed: No account found with email '{email}'")
-            raise HTTPException(status_code=404, detail="Email account not found.")
+            logger.warning(f"[SEND_RESET_OTP] Failed reset attempt: Email '{email}' is not registered in the database.")
+            raise HTTPException(status_code=404, detail="This email is not registered.")
         
         logger.info(f"[SEND_RESET_OTP] Email validated")
         

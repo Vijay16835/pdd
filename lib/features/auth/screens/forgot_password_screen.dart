@@ -20,6 +20,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _isEmailNotRegistered = false;
 
   Future<void> _sendReset() async {
     if (!_formKey.currentState!.validate()) return;
@@ -27,6 +28,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     debugPrint('[FORGOT_PASSWORD] Button clicked');
     setState(() {
       _isLoading = true;
+      _isEmailNotRegistered = false;
     });
 
     final email = _emailCtrl.text.trim();
@@ -51,7 +53,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('OTP sent to your email successfully.'),
+              content: Text('OTP sent successfully to your registered email.'),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
             ),
@@ -69,9 +71,39 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       } else {
         debugPrint('[FORGOT_PASSWORD] Failure');
         if (mounted) {
+          final errorMsg = auth.errorMessage ?? '';
+          if (errorMsg.toLowerCase().contains('not registered') || errorMsg.toLowerCase().contains('not found')) {
+            setState(() {
+              _isEmailNotRegistered = true;
+            });
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(auth.errorMessage ?? 'Failed to send OTP. Please try again.'),
+                backgroundColor: Colors.redAccent,
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: 'RETRY',
+                  textColor: Colors.white,
+                  onPressed: _sendReset,
+                ),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Exception thrown');
+      if (mounted) {
+        final errorMsg = e.toString();
+        if (errorMsg.toLowerCase().contains('not registered') || errorMsg.toLowerCase().contains('not found')) {
+          setState(() {
+            _isEmailNotRegistered = true;
+          });
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(auth.errorMessage ?? 'Failed to send OTP. Please try again.'),
+              content: Text('Error: ${e.toString()}'),
               backgroundColor: Colors.redAccent,
               behavior: SnackBarBehavior.floating,
               action: SnackBarAction(
@@ -82,22 +114,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
           );
         }
-      }
-    } catch (e) {
-      debugPrint('Exception thrown');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'RETRY',
-              textColor: Colors.white,
-              onPressed: _sendReset,
-            ),
-          ),
-        );
       }
     } finally {
       if (mounted) {
@@ -192,44 +208,163 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                     const SizedBox(height: 40),
 
-                    CustomTextField(
-                      controller: _emailCtrl,
-                      label: 'Email Address',
-                      hint: 'Enter your registered email',
-                      icon: Icons.email_outlined,
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Email is required';
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
-                          return 'Enter a valid email';
-                        }
-                        return null;
-                      },
-                    ).animate(delay: 200.ms).fadeIn(),
+                    if (_isEmailNotRegistered) ...[
+                      // Show: "This email is not registered."
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardDark,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.error_outline, color: Colors.redAccent, size: 24),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'This email is not registered.',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'The email address "${_emailCtrl.text.trim()}" is not registered in our system. Please check for spelling mistakes, or choose Register Now below.',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ).animate().fadeIn(),
 
-                    const SizedBox(height: 32),
+                      const SizedBox(height: 32),
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _sendReset,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.gold,
-                          foregroundColor: AppColors.navy,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                      // Display two actions: Register Now and Back to Login
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                Navigator.pop(context); // Go back to login screen
+                              },
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: AppColors.border),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(
+                                'Back to Login',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                // Redirect to registration page and prefill email
+                                Navigator.pushReplacementNamed(
+                                  context,
+                                  '/signup',
+                                  arguments: {'email': _emailCtrl.text.trim()},
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.gold,
+                                foregroundColor: AppColors.navy,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(
+                                'Register Now',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ).animate().fadeIn(),
+
+                      const SizedBox(height: 24),
+                      Center(
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isEmailNotRegistered = false;
+                            });
+                          },
+                          child: Text(
+                            'Try another email',
+                            style: GoogleFonts.inter(
+                              color: AppColors.gold,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                        child: Text(
-                          'Send OTP',
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                      ).animate().fadeIn(),
+                    ] else ...[
+                      CustomTextField(
+                        controller: _emailCtrl,
+                        label: 'Email Address',
+                        hint: 'Enter your registered email',
+                        icon: Icons.email_outlined,
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Email is required';
+                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
+                            return 'Enter a valid email';
+                          }
+                          return null;
+                        },
+                      ).animate(delay: 200.ms).fadeIn(),
+
+                      const SizedBox(height: 32),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _sendReset,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.gold,
+                            foregroundColor: AppColors.navy,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(
+                            'Send OTP',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                      ),
-                    ).animate(delay: 250.ms).fadeIn(),
+                      ).animate(delay: 250.ms).fadeIn(),
+                    ],
                   ],
                 ),
               ),

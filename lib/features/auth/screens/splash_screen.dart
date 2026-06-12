@@ -90,7 +90,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         }).catchError((e) {
           apiWatch.stop();
           debugPrint('[StartupTiming] API call / Database connection check failed after: ${apiWatch.elapsedMilliseconds} ms ($e)');
-          return false;
         });
 
         // Local session check

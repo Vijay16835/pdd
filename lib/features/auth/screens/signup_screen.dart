@@ -26,6 +26,19 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _agreedToTerms = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic> && args.containsKey('email')) {
+        setState(() {
+          _emailCtrl.text = args['email'] ?? '';
+        });
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();

@@ -88,8 +88,22 @@ class AuthService {
       );
       return {'success': true, 'message': response.data['message']};
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'success': false, 'message': _extractErrorMessage(e)};
     }
+  }
+
+  String _extractErrorMessage(dynamic e) {
+    if (e is DioException) {
+      if (e.response != null && e.response!.data != null) {
+        final data = e.response!.data;
+        if (data is Map) {
+          if (data['detail'] != null) return data['detail'].toString();
+          if (data['message'] != null) return data['message'].toString();
+        }
+      }
+      return e.message ?? e.toString();
+    }
+    return e.toString();
   }
 
   Future<Map<String, dynamic>> verifyResetOtp(String email, String otp) async {
