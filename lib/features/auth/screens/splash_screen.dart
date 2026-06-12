@@ -41,19 +41,24 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   Future<void> _initializeApp() async {
+    final totalStopwatch = Stopwatch()..start();
     try {
       final isTest = !kIsWeb && Platform.environment.containsKey('FLUTTER_TEST');
 
       // 1. Firebase.initializeApp()
+      final firebaseWatch = Stopwatch()..start();
       debugPrint('[StartupSequence] 1. Firebase.initializeApp() starting...');
       if (!isTest && Firebase.apps.isEmpty) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
       }
+      firebaseWatch.stop();
+      debugPrint('[StartupTiming] Firebase.initializeApp() took: ${firebaseWatch.elapsedMilliseconds} ms');
       debugPrint('[StartupSequence] 1. Firebase.initializeApp() completed');
 
-      // 2. SecureStorage initialization
+      // 2. SecureStorage initialization (acts as local DB connection check)
+      final dbWatch = Stopwatch()..start();
       debugPrint('[StartupSequence] 2. SecureStorage initialization starting...');
       final storage = const FlutterSecureStorage();
       if (!isTest) {
@@ -61,9 +66,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         await storage.write(key: 'startup_verify_test', value: 'ok');
         await storage.delete(key: 'startup_verify_test');
       }
+      dbWatch.stop();
+      debugPrint('[StartupTiming] Database/SecureStorage check took: ${dbWatch.elapsedMilliseconds} ms');
       debugPrint('[StartupSequence] 2. SecureStorage initialization completed');
 
-      // 3. Auth token loading
+      // 3. Auth token loading & Session validation
+      final sessionWatch = Stopwatch()..start();
       debugPrint('[StartupSequence] 3. Auth token loading starting...');
       final token = isTest ? null : await storage.read(key: 'auth_token');
       debugPrint('[StartupSequence] 3. Auth token loading completed (token exists: ${token != null})');
@@ -74,29 +82,47 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       final auth = context.read<AuthProvider>();
       
       if (!isTest) {
-        // Pre-warm the backend asynchronously while checking initial auth
-        auth.validateBackend().catchError((e) => false);
-        await auth.checkInitialAuth().timeout(const Duration(seconds: 45));
+        // Pre-warm the backend and validate API/Database connection in background
+        final apiWatch = Stopwatch()..start();
+        auth.validateBackend().then((isHealthy) {
+          apiWatch.stop();
+          debugPrint('[StartupTiming] API call / Database connection health check took: ${apiWatch.elapsedMilliseconds} ms (isHealthy: $isHealthy)');
+        }).catchError((e) {
+          apiWatch.stop();
+          debugPrint('[StartupTiming] API call / Database connection check failed after: ${apiWatch.elapsedMilliseconds} ms ($e)');
+          return false;
+        });
+
+        // Local session check
+        await auth.checkInitialAuth().timeout(const Duration(seconds: 3));
       }
-      debugPrint('[StartupSequence] 4. User session restoration completed (isAuthenticated: ${auth?.isAuthenticated ?? false})');
+      sessionWatch.stop();
+      debugPrint('[StartupTiming] Session validation took: ${sessionWatch.elapsedMilliseconds} ms');
+      debugPrint('[StartupSequence] 4. User session restoration completed (isAuthenticated: ${auth.isAuthenticated})');
 
       // 5. Provider initialization
       debugPrint('[StartupSequence] 5. Provider initialization starting...');
-      if (auth == null) {
-        throw Exception('AuthProvider failed to initialize');
-      }
       debugPrint('[StartupSequence] 5. Provider initialization completed');
 
       // 6. API client initialization
       debugPrint('[StartupSequence] 6. API client initialization starting...');
-      final apiService = ApiService();
-      if (apiService == null) {
-        throw Exception('ApiService failed to initialize');
-      }
+      ApiService();
       debugPrint('[StartupSequence] 6. API client initialization completed');
 
-      // Minimum delay for splash animation
-      await Future.delayed(const Duration(milliseconds: 600));
+      if (auth.isAuthenticated) {
+        debugPrint('[StartupTiming] User profile loading: Deferred to background (running asynchronously).');
+      } else {
+        debugPrint('[StartupTiming] User profile loading: Skipped (no session).');
+      }
+
+      // Enforce splash screen duration to be 2 seconds
+      final elapsed = totalStopwatch.elapsedMilliseconds;
+      final remaining = 2000 - elapsed;
+      if (remaining > 0) {
+        await Future.delayed(Duration(milliseconds: remaining));
+      }
+      totalStopwatch.stop();
+      debugPrint('[StartupTiming] Total Startup sequence took: ${totalStopwatch.elapsedMilliseconds} ms');
 
       if (!mounted) return;
       _navigate();

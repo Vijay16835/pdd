@@ -4,9 +4,16 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:lexguard_ai/core/constants/api_constants.dart';
 
 class ApiService {
+  static final ApiService _instance = ApiService._internal();
   late Dio _dio;
 
-  ApiService() {
+  factory ApiService() {
+    return _instance;
+  }
+
+  Dio get dio => _dio;
+
+  ApiService._internal() {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
@@ -107,10 +114,10 @@ class ApiService {
     }
   }
 
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options, ProgressCallback? onReceiveProgress}) async {
     try {
       return await _executeWithRetry(
-        () => _dio.get(path, queryParameters: queryParameters),
+        () => _dio.get(path, queryParameters: queryParameters, options: options, onReceiveProgress: onReceiveProgress),
         isIdempotent: true,
       );
     } on DioException catch (e) {
@@ -118,10 +125,10 @@ class ApiService {
     }
   }
 
-  Future<Response> post(String path, {dynamic data}) async {
+  Future<Response> post(String path, {dynamic data, Options? options}) async {
     try {
       return await _executeWithRetry(
-        () => _dio.post(path, data: data),
+        () => _dio.post(path, data: data, options: options),
         isIdempotent: false,
       );
     } on DioException catch (e) {

@@ -1,44 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:lexguard_ai/core/constants/api_constants.dart';
 import 'package:lexguard_ai/models/chat_model.dart';
+import 'package:lexguard_ai/services/api_service.dart';
 
 class ChatService {
   late final Dio _dio;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   ChatService() {
-    _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 60),
-      receiveTimeout: const Duration(seconds: 120),
-      sendTimeout: const Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-    ));
-
-    // JWT injection interceptor
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final token = await _storage.read(key: 'auth_token');
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-          debugPrint('[ChatService] JWT injected for: ${options.uri}');
-        } else {
-          debugPrint('[ChatService] ⚠️ No JWT token found in secure storage for: ${options.uri}');
-        }
-        return handler.next(options);
-      },
-      onError: (DioException e, handler) {
-        debugPrint(
-          '[ChatService] HTTP Error: ${e.response?.statusCode} ${e.requestOptions.uri}\n'
-          'Response body: ${e.response?.data}',
-        );
-        return handler.next(e);
-      },
-    ));
+    _dio = ApiService().dio;
   }
 
   /// Sends a message to the AI with document context.

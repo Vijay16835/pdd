@@ -1,4 +1,4 @@
-import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,7 +18,7 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  File? _selectedFile;
+  PlatformFile? _selectedPlatformFile;
   String? _fileName;
   String? _fileSize;
 
@@ -28,22 +28,22 @@ class _UploadScreenState extends State<UploadScreen> {
       allowedExtensions: ['pdf', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
     );
 
-    if (result != null && result.files.single.path != null) {
-      final file = File(result.files.single.path!);
-      final bytes = await file.length();
+    if (result != null) {
+      final file = result.files.single;
+      final double sizeInMB = file.size / (1024 * 1024);
       setState(() {
-        _selectedFile = file;
-        _fileName = result.files.single.name;
-        _fileSize = '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+        _selectedPlatformFile = file;
+        _fileName = file.name;
+        _fileSize = '${sizeInMB.toStringAsFixed(2)} MB';
       });
     }
   }
 
   Future<void> _uploadFile() async {
-    if (_selectedFile == null) return;
+    if (_selectedPlatformFile == null) return;
 
     final provider = context.read<DocumentProvider>();
-    final docData = await provider.uploadDocument(_selectedFile!);
+    final docData = await provider.uploadDocument(_selectedPlatformFile!);
 
     if (!mounted) return;
 
@@ -125,7 +125,7 @@ class _UploadScreenState extends State<UploadScreen> {
                   color: AppColors.cardDark,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: _selectedFile != null
+                    color: _selectedPlatformFile != null
                         ? AppColors.gold.withValues(alpha: 0.5)
                         : AppColors.border,
                     width: 2,
@@ -142,7 +142,7 @@ class _UploadScreenState extends State<UploadScreen> {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _selectedFile != null
+                        _selectedPlatformFile != null
                             ? _getFileIcon(_fileName)
                             : Icons.cloud_upload_outlined,
                         size: 48,
@@ -151,7 +151,7 @@ class _UploadScreenState extends State<UploadScreen> {
                     ).animate().scale(curve: Curves.elasticOut),
                     const SizedBox(height: 20),
                     Text(
-                      _selectedFile != null
+                      _selectedPlatformFile != null
                           ? _fileName ?? 'File selected'
                           : 'Tap to select document',
                       style: GoogleFonts.inter(
@@ -163,7 +163,7 @@ class _UploadScreenState extends State<UploadScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _selectedFile != null
+                      _selectedPlatformFile != null
                           ? _fileSize ?? ''
                           : 'PDF, DOCX, TXT, JPG, PNG (max 50MB)',
                       style: GoogleFonts.inter(
@@ -204,9 +204,8 @@ class _UploadScreenState extends State<UploadScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                color: AppColors.goldGlow,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                                  color: AppColors.goldGlow,
+                                  borderRadius: BorderRadius.circular(8)),
                               child: Text(ext,
                                   style: GoogleFonts.inter(
                                       fontSize: 12,
@@ -281,7 +280,7 @@ class _UploadScreenState extends State<UploadScreen> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: _selectedFile == null || provider.isUploading
+                onPressed: _selectedPlatformFile == null || provider.isUploading
                     ? null
                     : _uploadFile,
                 style: ElevatedButton.styleFrom(

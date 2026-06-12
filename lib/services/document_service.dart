@@ -2,11 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:lexguard_ai/core/constants/api_constants.dart';
 import 'package:lexguard_ai/core/utils/file_download_helper.dart';
+import 'package:lexguard_ai/services/api_service.dart';
 
 class DownloadResult {
   final String? path;
@@ -19,35 +20,33 @@ class DownloadResult {
 
 class DocumentService {
   late final Dio _dio;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   DocumentService() {
-    _dio = Dio(BaseOptions(
-      // Increased to 45s to handle backend cold starts (Render free tier spin-up)
-      connectTimeout: const Duration(seconds: 45),
-      receiveTimeout: const Duration(seconds: 120),
-      sendTimeout: const Duration(seconds: 60),
-    ));
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final token = await _storage.read(key: 'auth_token');
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        return handler.next(options);
-      },
-    ));
+    _dio = ApiService().dio;
   }
 
   /// Get the base URL for constructing download URLs
   String getBaseUrl() => ApiConstants.baseUrl;
 
   /// Upload a document file
-  Future<Map<String, dynamic>> uploadDocument(File file) async {
+  Future<Map<String, dynamic>> uploadDocument(PlatformFile file) async {
     try {
-      String fileName = kIsWeb ? file.path.split('/').last : file.path.split(Platform.pathSeparator).last;
+      MultipartFile multipartFile;
+      if (kIsWeb) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          return {'success': false, 'message': 'File bytes are empty'};
+        }
+        multipartFile = MultipartFile.fromBytes(bytes, filename: file.name);
+      } else {
+        if (file.path == null) {
+          return {'success': false, 'message': 'File path is missing'};
+        }
+        multipartFile = await MultipartFile.fromFile(file.path!, filename: file.name);
+      }
+
       FormData formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(file.path, filename: fileName),
+        'file': multipartFile,
       });
 
       final response = await _dio.post(

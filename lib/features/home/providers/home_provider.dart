@@ -26,6 +26,21 @@ class HomeProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   double get aiAccuracy => _aiAccuracy;
 
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   Future<void> loadDashboard() async {
     _isLoading = true;
     _errorMessage = null;

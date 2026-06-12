@@ -17,6 +17,21 @@ class SummaryProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get selectedLanguage => _selectedLanguage;
 
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   void clearSummary() {
     _state = SummaryState.idle;
     _summary = null;

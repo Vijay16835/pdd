@@ -12,6 +12,21 @@ class ChatProvider extends ChangeNotifier {
   String? _currentDocumentName;
   final _uuid = const Uuid();
 
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   List<ChatMessage> get messages => _messages;
   bool get isTyping => _isTyping;
   String? get errorMessage => _errorMessage;

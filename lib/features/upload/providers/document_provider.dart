@@ -1,12 +1,31 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:lexguard_ai/services/document_service.dart';
 
 class DocumentProvider extends ChangeNotifier {
   final DocumentService _service = DocumentService();
 
   List<Map<String, dynamic>> _documents = [];
+  bool _isDisposed = false;
+  final List<Timer> _activeTimers = [];
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    for (final t in _activeTimers) {
+      t.cancel();
+    }
+    _activeTimers.clear();
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
   Map<String, dynamic>? _currentDocument;
   Map<String, dynamic>? _currentAnalysis;
   List<Map<String, dynamic>> _currentClauses = [];
@@ -31,7 +50,7 @@ class DocumentProvider extends ChangeNotifier {
   String? get uploadingDocId => _uploadingDocId;
 
   /// Upload a document and start polling for analysis status
-  Future<Map<String, dynamic>?> uploadDocument(File file) async {
+  Future<Map<String, dynamic>?> uploadDocument(PlatformFile file) async {
     _isUploading = true;
     _errorMessage = null;
     notifyListeners();
@@ -67,8 +86,19 @@ class DocumentProvider extends ChangeNotifier {
 
   /// Poll analysis status every 3 seconds
   void _pollAnalysisStatus(String docId) {
-    Timer.periodic(const Duration(seconds: 3), (timer) async {
+    late Timer timer;
+    timer = Timer.periodic(const Duration(seconds: 3), (t) async {
+      if (_isDisposed) {
+        t.cancel();
+        _activeTimers.remove(t);
+        return;
+      }
       final result = await _service.getDocumentStatus(docId);
+      if (_isDisposed) {
+        t.cancel();
+        _activeTimers.remove(t);
+        return;
+      }
       if (result['success']) {
         final status = result['data']['status'];
 
@@ -82,15 +112,18 @@ class DocumentProvider extends ChangeNotifier {
         }
 
         if (status == 'completed' || status == 'failed') {
-          timer.cancel();
+          t.cancel();
+          _activeTimers.remove(t);
           _uploadingDocId = null;
           // Refresh full document list
           await fetchDocuments();
         }
       } else {
-        timer.cancel();
+        t.cancel();
+        _activeTimers.remove(t);
       }
     });
+    _activeTimers.add(timer);
   }
 
   /// Fetch all documents

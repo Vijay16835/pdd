@@ -575,39 +575,13 @@ class AuthProvider extends ChangeNotifier {
       }
       
       if (token != null) {
-        // Verify token with backend
-        final result = await _authService.getMe();
-        if (result['success']) {
-          _user = UserModel.fromJson(result['data']);
-          _authState = AuthState.authenticated;
-          debugPrint('AuthProvider: Token verified, user loaded: ${_user?.name}');
-        } else {
-          final message = result['message']?.toString() ?? '';
-          debugPrint('AuthProvider: Token verification failed: $message');
-          final isAuthError = message.contains('401') || message.contains('403') || message.contains('credentials') || message.contains('Unauthorized');
-          
-          if (isAuthError) {
-            if (refreshToken != null) {
-              // Attempt to refresh token
-              final refreshResult = await _authService.refreshToken(refreshToken);
-              if (refreshResult['success']) {
-                await storage.write(key: 'auth_token', value: refreshResult['data']['access_token']);
-                final newResult = await _authService.getMe();
-                if (newResult['success']) {
-                  _user = UserModel.fromJson(newResult['data']);
-                  _authState = AuthState.authenticated;
-                  notifyListeners();
-                  return;
-                }
-              }
-            }
-            await logout();
-          } else {
-            // Transient network/server error: do NOT log out or delete tokens
-            _authState = AuthState.unauthenticated;
-            _errorMessage = "Server is unreachable. Operating in offline mode.";
-          }
-        }
+        // Optimistically set authenticated state based on valid cached token
+        _authState = AuthState.authenticated;
+        notifyListeners();
+        debugPrint('AuthProvider: Optimistically authenticated based on local token validation.');
+
+        // Load profile in background
+        _loadProfileInBackground(storage, token, refreshToken);
       } else {
         _authState = AuthState.unauthenticated;
         debugPrint('AuthProvider: No token, set to unauthenticated');
@@ -615,6 +589,50 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('AuthProvider: Error during initial auth check: $e');
       _authState = AuthState.unauthenticated;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadProfileInBackground(FlutterSecureStorage storage, String token, String? refreshToken) async {
+    final profileWatch = Stopwatch()..start();
+    debugPrint('AuthProvider: Starting background user profile load...');
+    try {
+      final result = await _authService.getMe();
+      profileWatch.stop();
+      debugPrint('[StartupTiming] User profile loading took: ${profileWatch.elapsedMilliseconds} ms');
+      
+      if (result['success']) {
+        _user = UserModel.fromJson(result['data']);
+        _authState = AuthState.authenticated;
+        debugPrint('AuthProvider: Background user loaded: ${_user?.name}');
+      } else {
+        final message = result['message']?.toString() ?? '';
+        debugPrint('AuthProvider: Background token verification failed: $message');
+        final isAuthError = message.contains('401') || message.contains('403') || message.contains('credentials') || message.contains('Unauthorized');
+        
+        if (isAuthError) {
+          if (refreshToken != null) {
+            final refreshResult = await _authService.refreshToken(refreshToken);
+            if (refreshResult['success']) {
+              await storage.write(key: 'auth_token', value: refreshResult['data']['access_token']);
+              final newResult = await _authService.getMe();
+              if (newResult['success']) {
+                _user = UserModel.fromJson(newResult['data']);
+                _authState = AuthState.authenticated;
+                notifyListeners();
+                return;
+              }
+            }
+          }
+          await logout();
+        } else {
+          // Offline/transient error: do not force logout
+          _errorMessage = "Server is unreachable. Operating in offline mode.";
+        }
+      }
+    } catch (e) {
+      debugPrint('AuthProvider: Error in background profile load: $e');
     } finally {
       notifyListeners();
     }
