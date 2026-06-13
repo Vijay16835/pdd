@@ -25,7 +25,6 @@ class TextExtractionError(Exception):
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract text from PDF files using pdfplumber."""
     try:
-        # pyrefly: ignore [missing-import]
         import pdfplumber
         text = ""
         with pdfplumber.open(file_path) as pdf:
@@ -33,26 +32,11 @@ def extract_text_from_pdf(file_path: str) -> str:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n\n"
-        
-        # If no text extracted (scanned PDF), try OCR
-        if not text.strip():
-            try:
-                text = extract_text_from_image(file_path)
-            except Exception as ocr_err:
-                raise TextExtractionError("Image OCR failed") from ocr_err
-            
-            if not text.strip():
-                raise TextExtractionError("Empty document content")
-        
         return text.strip()
-    except TextExtractionError:
-        raise
     except Exception as e:
         print(f"PDF extraction error: {e}")
-        traceback.print_exc()
         # Fallback to PyPDF2
         try:
-            # pyrefly: ignore [missing-import]
             import PyPDF2
             text = ""
             with open(file_path, 'rb') as f:
@@ -61,20 +45,36 @@ def extract_text_from_pdf(file_path: str) -> str:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n\n"
-            if not text.strip():
-                raise TextExtractionError("Empty document content")
             return text.strip()
-        except TextExtractionError:
-            raise
         except Exception as e2:
             print(f"PyPDF2 fallback failed: {e2}")
             raise TextExtractionError("PDF text extraction failed") from e2
 
 
+def extract_text_from_doc(file_path: str) -> str:
+    """Extract text from legacy DOC files using legacy-doc."""
+    try:
+        from legacy_doc import extract_text as legacy_extract
+        with open(file_path, "rb") as f:
+            result = legacy_extract(f.read())
+            if hasattr(result, 'text'):
+                text = result.text
+            else:
+                text = str(result)
+        if not text.strip():
+            raise TextExtractionError("Unable to extract readable text from document.")
+        return text.strip()
+    except TextExtractionError:
+        raise
+    except Exception as e:
+        print(f"DOC extraction error: {e}")
+        traceback.print_exc()
+        raise TextExtractionError("Unsupported file structure") from e
+
+
 def extract_text_from_docx(file_path: str) -> str:
     """Extract text from DOCX files."""
     try:
-        # pyrefly: ignore [missing-import]
         import docx
         doc = docx.Document(file_path)
         text = ""
@@ -90,7 +90,7 @@ def extract_text_from_docx(file_path: str) -> str:
                     text += row_text + "\n"
         
         if not text.strip():
-            raise TextExtractionError("Empty document content")
+            raise TextExtractionError("Unable to extract readable text from document.")
             
         return text.strip()
     except TextExtractionError:
@@ -98,7 +98,7 @@ def extract_text_from_docx(file_path: str) -> str:
     except Exception as e:
         print(f"DOCX extraction error: {e}")
         traceback.print_exc()
-        raise TextExtractionError("DOCX text extraction failed") from e
+        raise TextExtractionError("Unsupported file structure") from e
 
 
 def extract_text_from_txt(file_path: str) -> str:
@@ -107,28 +107,29 @@ def extract_text_from_txt(file_path: str) -> str:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             text = f.read().strip()
         if not text:
-            raise TextExtractionError("Empty document content")
+            raise TextExtractionError("Unable to extract readable text from document.")
         return text
     except TextExtractionError:
         raise
     except Exception as e:
         print(f"TXT extraction error: {e}")
-        raise TextExtractionError("Empty document content") from e
+        raise TextExtractionError("Unsupported file structure") from e
 
 
 def extract_text_from_image(file_path: str) -> str:
     """Extract text from images using OCR (EasyOCR or pytesseract)."""
     text = ""
+    print("[OCR] OCR started")
     
     # Try EasyOCR first
     easyocr_failed = False
     try:
-        # pyrefly: ignore [missing-import]
         import easyocr
         reader = easyocr.Reader(['en'], gpu=False)
         results = reader.readtext(file_path, detail=0)
         text = "\n".join(results)
         if text.strip():
+            print("[OCR] OCR completed")
             return text.strip()
     except Exception as e:
         print(f"EasyOCR failed: {e}")
@@ -137,9 +138,7 @@ def extract_text_from_image(file_path: str) -> str:
     # Fallback to pytesseract
     try:
         from app.core.config import settings
-        # pyrefly: ignore [missing-import]
         import pytesseract
-        # pyrefly: ignore [missing-import]
         from PIL import Image
         
         # Set tesseract path if it exists
@@ -149,36 +148,120 @@ def extract_text_from_image(file_path: str) -> str:
         img = Image.open(file_path)
         text = pytesseract.image_to_string(img)
         if text.strip():
+            print("[OCR] OCR completed")
             return text.strip()
     except ImportError as ie:
         print("Neither EasyOCR nor pytesseract is installed. OCR unavailable.")
         if easyocr_failed:
-            raise TextExtractionError("Image OCR failed") from ie
+            raise TextExtractionError("OCR extraction failed") from ie
     except Exception as e:
         print(f"Pytesseract failed: {e}")
         if easyocr_failed:
-            raise TextExtractionError("Image OCR failed") from e
+            raise TextExtractionError("OCR extraction failed") from e
     
     if not text.strip():
-        raise TextExtractionError("Empty document content")
+        raise TextExtractionError("OCR extraction failed")
         
+    print("[OCR] OCR completed")
+    return text.strip()
+
+
+def ocr_pdf(file_path: str) -> str:
+    """Perform OCR on a PDF by rendering pages as images and running OCR on them."""
+    import pypdfium2 as pdfium
+    import tempfile
+    
+    print("[OCR] OCR started")
+    text = ""
+    pdf = None
+    try:
+        pdf = pdfium.PdfDocument(file_path)
+        for i in range(len(pdf)):
+            page = pdf.get_page(i)
+            pil_image = page.render(scale=2).to_pil()
+            
+            # Save page image to temporary file
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                temp_img_path = tmp.name
+            try:
+                pil_image.save(temp_img_path)
+                page_text = extract_text_from_image(temp_img_path)
+                if page_text:
+                    text += page_text + "\n\n"
+            finally:
+                if os.path.exists(temp_img_path):
+                    os.remove(temp_img_path)
+    except Exception as e:
+        print(f"ocr_pdf failed: {e}")
+        raise TextExtractionError("OCR extraction failed") from e
+    finally:
+        if pdf:
+            pdf.close()
+            
+    print("[OCR] OCR completed")
+    if not text.strip():
+        raise TextExtractionError("OCR extraction failed")
     return text.strip()
 
 
 def extract_text(file_path: str, file_type: str) -> str:
     """Main dispatcher — extract text based on file type."""
     file_type = file_type.lower()
+    print("[EXTRACT] Starting extraction")
     
-    if file_type in ['pdf', 'application/pdf']:
-        return extract_text_from_pdf(file_path)
-    elif file_type in ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
-        return extract_text_from_docx(file_path)
-    elif file_type in ['txt', 'text/plain']:
-        return extract_text_from_txt(file_path)
-    elif file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
-        return extract_text_from_image(file_path)
-    else:
-        raise TextExtractionError("Unsupported file type")
+    text = ""
+    try:
+        if file_type in ['pdf', 'application/pdf']:
+            text = extract_text_from_pdf(file_path)
+        elif file_type in ['doc', 'docx', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+            if file_type in ['doc', 'application/msword'] or file_path.endswith('.doc'):
+                text = extract_text_from_doc(file_path)
+            else:
+                text = extract_text_from_docx(file_path)
+        elif file_type in ['txt', 'text/plain']:
+            text = extract_text_from_txt(file_path)
+        elif file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
+            text = extract_text_from_image(file_path)
+        else:
+            raise TextExtractionError("Unsupported file structure")
+    except TextExtractionError:
+        raise
+    except Exception as e:
+        print(f"Extraction failed: {e}")
+        traceback.print_exc()
+        if file_type in ['pdf', 'application/pdf']:
+            raise TextExtractionError("PDF text extraction failed") from e
+        elif file_type in ['doc', 'docx', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+            raise TextExtractionError("Unsupported file structure") from e
+        elif file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
+            raise TextExtractionError("OCR extraction failed") from e
+        else:
+            raise TextExtractionError("Unsupported file structure") from e
+
+    # OCR Fallback if text is empty
+    if not text.strip():
+        print("[EXTRACT] Extracted text empty. Starting OCR fallback.")
+        if file_type in ['pdf', 'application/pdf']:
+            try:
+                text = ocr_pdf(file_path)
+            except Exception as ocr_err:
+                raise TextExtractionError("OCR extraction failed") from ocr_err
+        elif file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
+            try:
+                text = extract_text_from_image(file_path)
+            except Exception as ocr_err:
+                raise TextExtractionError("OCR extraction failed") from ocr_err
+        else:
+            raise TextExtractionError("Unable to extract readable text from document.")
+            
+    if not text.strip():
+        if file_type in ['pdf', 'application/pdf'] or file_type in ['jpg', 'jpeg', 'png', 'image/jpeg', 'image/png', 'image/jpg']:
+            raise TextExtractionError("OCR extraction failed")
+        else:
+            raise TextExtractionError("Unable to extract readable text from document.")
+            
+    print(f"[EXTRACT] Text length: {len(text)}")
+    return text.strip()
 
 
 def get_file_extension(filename: str) -> str:
@@ -187,7 +270,7 @@ def get_file_extension(filename: str) -> str:
     return ext.lstrip('.').lower()
 
 
-SUPPORTED_EXTENSIONS = {'pdf', 'docx', 'txt', 'jpg', 'jpeg', 'png'}
+SUPPORTED_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'}
 MAX_FILE_SIZE_MB = 20
 
 def validate_file(filename: str, file_size: int) -> tuple:
@@ -201,6 +284,7 @@ def validate_file(filename: str, file_size: int) -> tuple:
         return False, f"File too large: {size_mb:.1f}MB. Maximum: {MAX_FILE_SIZE_MB}MB"
     
     return True, ""
+
 
 def get_user_storage_usage_mb(user_id: str) -> float:
     """Calculate the total storage used by a user in MB.
@@ -303,5 +387,3 @@ def get_user_storage_usage_mb(user_id: str) -> float:
 
     total_size_mb = total_size_bytes / (1024 * 1024)
     return round(total_size_mb, 2)
-
-

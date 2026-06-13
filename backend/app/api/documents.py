@@ -18,6 +18,37 @@ from app.services.groq_service import groq_service
 router = APIRouter()
 
 
+def update_document_status(db, document_id: str, status: str, error_message: Optional[str] = None):
+    """Helper to update document status in both Firestore and PostgreSQL."""
+    try:
+        db.update_document(document_id, {
+            "status": status,
+            "error_message": error_message
+        })
+    except Exception as fe:
+        print(f"Failed to update document status in Firestore: {fe}")
+        
+    conn = None
+    try:
+        conn = db._get_pg_conn()
+        if conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "UPDATE documents SET status = %s, error_message = %s WHERE id = %s",
+                    (status, error_message, document_id)
+                )
+                conn.commit()
+                print(f"[DB] Document status updated to '{status}' in PostgreSQL")
+            finally:
+                cur.close()
+    except Exception as pe:
+        print(f"Failed to update document status in PostgreSQL: {pe}")
+    finally:
+        if conn:
+            conn.close()
+
+
 async def run_ai_analysis(document_id: str):
     """Background task: extract text from document and run Groq AI analysis."""
     from app.services.firebase_service import firebase_service
@@ -33,7 +64,7 @@ async def run_ai_analysis(document_id: str):
         doc = Document(**doc_data)
         
         # Step 1: Extract text
-        db.update_document(document_id, {"status": "extracting"})
+        update_document_status(db, document_id, "extracting")
         print(f"[ANALYSIS_STARTED] Analysis started for document {document_id}")
         
         # Check if file exists locally, if not download from Storage
@@ -55,25 +86,32 @@ async def run_ai_analysis(document_id: str):
                 download_success = False
             if not download_success:
                 print(f"Failed to download file from Storage for {document_id}")
-                db.update_document(document_id, {"status": "failed", "error_message": "Supabase upload failed"})
+                update_document_status(db, document_id, "failed", "Unsupported file structure")
                 return
             # Update path locally
             db.update_document(document_id, {"path": local_path})
             doc.path = local_path
             
         file_ext = get_file_extension(doc.name)
+        
+        # Text Extraction phase
         try:
             extracted_text = extract_text(local_path, file_ext)
+            
+            # Step 4: Validate Before AI Analysis
+            MIN_TEXT_LENGTH = 10
             if not extracted_text or not extracted_text.strip():
-                raise TextExtractionError("Empty document content")
+                raise TextExtractionError("Unable to extract readable text from document.")
+            if len(extracted_text.strip()) < MIN_TEXT_LENGTH:
+                raise TextExtractionError("Unable to extract readable text from document.")
         except TextExtractionError as ete:
             error_reason = str(ete)
-            db.update_document(document_id, {"status": "failed", "error_message": error_reason})
+            update_document_status(db, document_id, "failed", error_reason)
             print(f"[TEXT_EXTRACTION_FAILED] Text extraction failed for {document_id}: {error_reason}")
             return
         except Exception as ex:
-            error_reason = "PDF text extraction failed" if file_ext == "pdf" else "DOCX text extraction failed" if file_ext == "docx" else "Image OCR failed" if file_ext in ['jpg','jpeg','png'] else "Empty document content"
-            db.update_document(document_id, {"status": "failed", "error_message": error_reason})
+            error_reason = "Unsupported file structure"
+            update_document_status(db, document_id, "failed", error_reason)
             print(f"[TEXT_EXTRACTION_FAILED] Text extraction failed for {document_id}: {ex}")
             return
             
@@ -92,49 +130,57 @@ async def run_ai_analysis(document_id: str):
         
         # Step 2: Run Groq AI analysis
         try:
+            print("[AI] Analysis started")
             analysis_result = await groq_service.analyze_document(extracted_text)
+            print("[AI] Analysis completed")
             print(f"[AI_ANALYSIS_SUCCESS] AI analysis completed for {document_id}")
         except Exception as e:
             print(f"Groq analysis failed for {document_id}: {e}")
-            db.update_document(document_id, {"status": "failed", "error_message": "AI service unavailable"})
+            update_document_status(db, document_id, "failed", "AI analysis failed")
             return
         
         # Step 3: Save analysis results to Document
-        db.update_document(document_id, {
-            "risk_score": analysis_result.get("risk_score", 0),
-            "risk_level": analysis_result.get("risk_level", "Medium"),
-            "summary": analysis_result.get("summary", ""),
-            "document_type": analysis_result.get("document_type", "Unknown"),
-            "status": "completed",
-            "error_message": None,
-            "analyzed_at": datetime.now(timezone.utc).isoformat()
-        })
-        
-        # Save detailed Analysis record
-        analysis_data = {
-            "document_id": document_id,
-            "risk_level": analysis_result.get("risk_level", "Medium"),
-            "risk_score": analysis_result.get("risk_score", 0),
-            "summary": analysis_result.get("summary", ""),
-            "ai_confidence": 0.85,
-            "parties": analysis_result.get("parties", []),
-            "important_dates": analysis_result.get("important_dates", []),
-            "recommendations": analysis_result.get("recommendations", []),
-            "raw_analysis_data": analysis_result,
-        }
-        db.save_analysis(document_id, analysis_data)
-        
-        # Save extracted clauses
-        db.delete_document_clauses(document_id)
-        for clause_data in analysis_result.get("clauses", []):
-            db.save_clause({
-                "document_id": document_id,
-                "title": clause_data.get("title", "Untitled Clause"),
-                "content": clause_data.get("content", ""),
-                "summary": clause_data.get("explanation", clause_data.get("summary", "")),
-                "risk_level": clause_data.get("risk_level", "Low"),
-                "mitigation_advice": clause_data.get("mitigation_advice", ""),
+        print("[DB] Saving results")
+        try:
+            db.update_document(document_id, {
+                "risk_score": analysis_result.get("risk_score", 0),
+                "risk_level": analysis_result.get("risk_level", "Medium"),
+                "summary": analysis_result.get("summary", ""),
+                "document_type": analysis_result.get("document_type", "Unknown"),
+                "status": "completed",
+                "error_message": None,
+                "analyzed_at": datetime.now(timezone.utc).isoformat()
             })
+            
+            # Save detailed Analysis record
+            analysis_data = {
+                "document_id": document_id,
+                "risk_level": analysis_result.get("risk_level", "Medium"),
+                "risk_score": analysis_result.get("risk_score", 0),
+                "summary": analysis_result.get("summary", ""),
+                "ai_confidence": 0.85,
+                "parties": analysis_result.get("parties", []),
+                "important_dates": analysis_result.get("important_dates", []),
+                "recommendations": analysis_result.get("recommendations", []),
+                "raw_analysis_data": analysis_result,
+            }
+            db.save_analysis(document_id, analysis_data)
+            
+            # Save extracted clauses
+            db.delete_document_clauses(document_id)
+            for clause_data in analysis_result.get("clauses", []):
+                db.save_clause({
+                    "document_id": document_id,
+                    "title": clause_data.get("title", "Untitled Clause"),
+                    "content": clause_data.get("content", ""),
+                    "summary": clause_data.get("explanation", clause_data.get("summary", "")),
+                    "risk_level": clause_data.get("risk_level", "Low"),
+                    "mitigation_advice": clause_data.get("mitigation_advice", ""),
+                })
+        except Exception as fe:
+            print(f"Failed to save results to Firestore: {fe}")
+            update_document_status(db, document_id, "failed", "Database save failed")
+            return
             
         # Save to Supabase PostgreSQL database
         conn = None
@@ -208,11 +254,19 @@ async def run_ai_analysis(document_id: str):
                         ))
                         
                     conn.commit()
+                    print("[DB] Save successful")
                     print(f"[DATABASE_SAVE_SUCCESS] Saved analysis and clauses to DB for {document_id}")
+                except Exception as tx_err:
+                    conn.rollback()
+                    raise tx_err
                 finally:
                     cur.close()
+            else:
+                raise RuntimeError("Could not connect to PostgreSQL")
         except Exception as pg_err:
             print(f"[FAIL] Failed to dual-write analysis/clauses to PostgreSQL: {pg_err}")
+            update_document_status(db, document_id, "failed", "Database save failed")
+            return
         finally:
             if conn:
                 conn.close()
@@ -223,27 +277,9 @@ async def run_ai_analysis(document_id: str):
         print(f"Background analysis error for {document_id}: {e}")
         traceback.print_exc()
         try:
-            db.update_document(document_id, {"status": "failed", "error_message": "Empty document content"})
-            
-            # Update failed status in PostgreSQL
-            conn_fail = None
-            try:
-                conn_fail = db._get_pg_conn()
-                if conn_fail:
-                    cur = conn_fail.cursor()
-                    try:
-                        cur.execute("UPDATE documents SET status = 'failed', error_message = 'Empty document content' WHERE id = %s", (document_id,))
-                        conn_fail.commit()
-                    finally:
-                        cur.close()
-            except Exception as pg_err:
-                print(f"Failed to update failed status in PostgreSQL: {pg_err}")
-            finally:
-                if conn_fail:
-                    conn_fail.close()
+            update_document_status(db, document_id, "failed", "Unsupported file structure")
         except Exception as update_err:
             print(f"Failed to update document status to failed: {update_err}")
-
 
 
 @router.post("/upload")
@@ -256,6 +292,8 @@ async def upload_document(
     """Upload a document and trigger AI analysis in the background."""
     # Validate file
     file_content = await file.read()
+    print("[UPLOAD] File received")
+    
     is_valid, error_msg = validate_file(file.filename, len(file_content))
     if not is_valid:
         print(f"[UPLOAD_FAILED] File validation failed for {file.filename}: {error_msg}")
@@ -301,7 +339,7 @@ async def upload_document(
                 file_options={"content-type": mime_type or "application/octet-stream"}
             )
         download_url = supabase.storage.from_("legal-documents").get_public_url(remote_path)
-        print(f"[STORAGE_UPLOAD_SUCCESS] File uploaded to Supabase Storage: {remote_path}")
+        print("[UPLOAD] File stored")
     except Exception as e:
         print(f"Supabase upload failed: {e}")
         upload_error = "Supabase upload failed"
