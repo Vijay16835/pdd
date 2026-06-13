@@ -344,8 +344,13 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[AuthProvider] Saved refresh token successfully');
     }
     
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remember_me', _rememberMe);
+    
+    String userId = '';
     if (data['user'] != null) {
       _user = UserModel.fromJson(data['user']);
+      userId = _user!.id;
       await _saveUserLocally(_user!);
     } else {
       // Fallback if backend doesn't return user object
@@ -357,8 +362,14 @@ class AuthProvider extends ChangeNotifier {
         avatarUrl: photo,
         createdAt: DateTime.now(),
       );
+      userId = _user!.id;
       await _saveUserLocally(_user!);
     }
+    
+    if (userId.isNotEmpty) {
+      await prefs.setString('user_id', userId);
+    }
+    
     // Immediately fetch full profile from /user/me so storage_limit_mb: 20
     // and live stats always reflect the server's authoritative values.
     refreshStats();
@@ -529,6 +540,21 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _clearSessionData() async {
+    try {
+      const storage = FlutterSecureStorage();
+      await storage.delete(key: 'auth_token');
+      await storage.delete(key: 'refresh_token');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_data');
+      await prefs.remove('user_id');
+      _user = null;
+      debugPrint('[AuthProvider] Cleared session data successfully');
+    } catch (e) {
+      debugPrint('[AuthProvider] Error clearing session data: $e');
+    }
+  }
+
   Future<void> logout() async {
     const storage = FlutterSecureStorage();
     final refreshToken = await storage.read(key: 'refresh_token');
@@ -539,9 +565,16 @@ class AuthProvider extends ChangeNotifier {
       } catch (_) {}
     }
     
-    await storage.delete(key: 'auth_token');
-    await storage.delete(key: 'refresh_token');
-    await _clearUserLocally();
+    await _clearSessionData();
+    
+    // Remove Remember Me session data
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('remember_me');
+    } catch (e) {
+      debugPrint('[AuthProvider] Error clearing remember_me preference: $e');
+    }
+    _rememberMe = false;
     
     try {
       if (_googleInitialized) {
@@ -558,7 +591,6 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('AuthProvider: Error signing out of Firebase: $e');
     }
     
-    _user = null;
     _authState = AuthState.unauthenticated;
     notifyListeners();
   }
@@ -566,19 +598,23 @@ class AuthProvider extends ChangeNotifier {
   Future<void> checkInitialAuth() async {
     debugPrint('AuthProvider: Starting initial auth check...');
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final rememberMe = prefs.getBool('remember_me') ?? false;
+      _rememberMe = rememberMe; // restore state
+      
       const storage = FlutterSecureStorage();
       final token = await storage.read(key: 'auth_token');
       final refreshToken = await storage.read(key: 'refresh_token');
       
-      debugPrint('AuthProvider: Token found: ${token != null}');
+      debugPrint('AuthProvider: rememberMe: $rememberMe, Token found: ${token != null}');
 
-      if (token != null && _isTokenExpired(token)) {
-        debugPrint('AuthProvider: Cached token expired locally. Clearing saved auth.');
-        await logout();
-        return;
-      }
-      
-      if (token != null) {
+      if (rememberMe && token != null) {
+        if (_isTokenExpired(token)) {
+          debugPrint('AuthProvider: Cached token expired locally. Clearing saved auth.');
+          await logout();
+          return;
+        }
+        
         _user = await _loadUserLocally();
         // Optimistically set authenticated state based on valid cached token
         _authState = AuthState.authenticated;
@@ -588,8 +624,9 @@ class AuthProvider extends ChangeNotifier {
         // Load profile in background
         _loadProfileInBackground(storage, token, refreshToken);
       } else {
+        debugPrint('AuthProvider: rememberMe is false or no token. Clearing session and setting to unauthenticated.');
+        await _clearSessionData();
         _authState = AuthState.unauthenticated;
-        debugPrint('AuthProvider: No token, set to unauthenticated');
       }
     } catch (e) {
       debugPrint('AuthProvider: Error during initial auth check: $e');
