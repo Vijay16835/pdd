@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lexguard_ai/models/user_model.dart';
 import 'package:lexguard_ai/services/auth_service.dart';
 
@@ -345,6 +346,7 @@ class AuthProvider extends ChangeNotifier {
     
     if (data['user'] != null) {
       _user = UserModel.fromJson(data['user']);
+      await _saveUserLocally(_user!);
     } else {
       // Fallback if backend doesn't return user object
       _user = UserModel(
@@ -355,6 +357,7 @@ class AuthProvider extends ChangeNotifier {
         avatarUrl: photo,
         createdAt: DateTime.now(),
       );
+      await _saveUserLocally(_user!);
     }
     // Immediately fetch full profile from /user/me so storage_limit_mb: 20
     // and live stats always reflect the server's authoritative values.
@@ -538,6 +541,7 @@ class AuthProvider extends ChangeNotifier {
     
     await storage.delete(key: 'auth_token');
     await storage.delete(key: 'refresh_token');
+    await _clearUserLocally();
     
     try {
       if (_googleInitialized) {
@@ -575,6 +579,7 @@ class AuthProvider extends ChangeNotifier {
       }
       
       if (token != null) {
+        _user = await _loadUserLocally();
         // Optimistically set authenticated state based on valid cached token
         _authState = AuthState.authenticated;
         notifyListeners();
@@ -604,6 +609,7 @@ class AuthProvider extends ChangeNotifier {
       
       if (result['success']) {
         _user = UserModel.fromJson(result['data']);
+        await _saveUserLocally(_user!);
         _authState = AuthState.authenticated;
         debugPrint('AuthProvider: Background user loaded: ${_user?.name}');
       } else {
@@ -619,6 +625,7 @@ class AuthProvider extends ChangeNotifier {
               final newResult = await _authService.getMe();
               if (newResult['success']) {
                 _user = UserModel.fromJson(newResult['data']);
+                await _saveUserLocally(_user!);
                 _authState = AuthState.authenticated;
                 notifyListeners();
                 return;
@@ -635,6 +642,37 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('AuthProvider: Error in background profile load: $e');
     } finally {
       notifyListeners();
+    }
+  }
+
+  Future<void> _saveUserLocally(UserModel user) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_data', json.encode(user.toJson()));
+    } catch (e) {
+      debugPrint('AuthProvider: Error saving user locally: $e');
+    }
+  }
+
+  Future<UserModel?> _loadUserLocally() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final dataStr = prefs.getString('user_data');
+      if (dataStr != null) {
+        return UserModel.fromJson(json.decode(dataStr) as Map<String, dynamic>);
+      }
+    } catch (e) {
+      debugPrint('AuthProvider: Error loading user locally: $e');
+    }
+    return null;
+  }
+
+  Future<void> _clearUserLocally() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_data');
+    } catch (e) {
+      debugPrint('AuthProvider: Error clearing local user: $e');
     }
   }
 

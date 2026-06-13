@@ -120,7 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: user?.avatarUrl == null
                 ? Center(
                     child: Text(
-                      user?.initials ?? 'AJ',
+                      user?.initials ?? 'U',
                       style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.navy),
                     ),
                   )
@@ -128,12 +128,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
           const SizedBox(height: 16),
           Text(
-            user?.name ?? 'Alex Johnson',
+            user?.name ?? 'User',
             style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
           ),
           const SizedBox(height: 4),
           Text(
-            user?.email ?? 'user@example.com',
+            user?.email ?? '',
             style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 6),
@@ -303,16 +303,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : null,
                         ),
                         child: user?.avatarUrl == null
-                            ? Center(child: Text(user?.initials ?? 'AJ', style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.navy)))
+                            ? Center(child: Text(user?.initials ?? 'U', style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.navy)))
                             : null,
                       ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
 
                       const SizedBox(height: 14),
 
-                      Text(user?.name ?? 'Alex Johnson', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary))
+                      Text(user?.name ?? 'User', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary))
                           .animate(delay: 100.ms).fadeIn(),
                       const SizedBox(height: 4),
-                      Text(user?.email ?? 'user@example.com', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary))
+                      Text(user?.email ?? '', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary))
                           .animate(delay: 150.ms).fadeIn(),
                       const SizedBox(height: 6),
                       if (user?.createdAt != null)

@@ -356,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     ),
                                     Text(
-                                      user?.firstName ?? 'Alex',
+                                      user?.firstName ?? 'User',
                                       style: GoogleFonts.inter(
                                         fontSize: 24,
                                         fontWeight: FontWeight.w800,
@@ -458,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   child: Center(
                                     child: Text(
-                                      user?.initials ?? 'AJ',
+                                      user?.initials ?? 'U',
                                       style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w800,
