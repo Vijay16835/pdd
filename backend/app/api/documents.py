@@ -142,6 +142,7 @@ async def run_ai_analysis(document_id: str):
         
         # Step 3: Save analysis results to Document
         print("[DB] Saving results")
+        print("[HISTORY] Saving analysis record")
         try:
             db.update_document(document_id, {
                 "risk_score": analysis_result.get("risk_score", 0),
@@ -180,6 +181,7 @@ async def run_ai_analysis(document_id: str):
                 })
         except Exception as fe:
             print(f"Failed to save results to Firestore: {fe}")
+            print("[HISTORY] Save failed")
             update_document_status(db, document_id, "failed", "Database save failed")
             return
             
@@ -257,6 +259,7 @@ async def run_ai_analysis(document_id: str):
                     conn.commit()
                     print("[DB] Save successful")
                     print(f"[DATABASE_SAVE_SUCCESS] Saved analysis and clauses to DB for {document_id}")
+                    print("[HISTORY] Record saved successfully")
                 except Exception as tx_err:
                     conn.rollback()
                     raise tx_err
@@ -266,6 +269,7 @@ async def run_ai_analysis(document_id: str):
                 raise RuntimeError("Could not connect to PostgreSQL")
         except Exception as pg_err:
             print(f"[FAIL] Failed to dual-write analysis/clauses to PostgreSQL: {pg_err}")
+            print("[HISTORY] Save failed")
             update_document_status(db, document_id, "failed", "Database save failed")
             return
         finally:
