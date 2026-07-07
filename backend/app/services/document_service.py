@@ -120,18 +120,33 @@ def preprocess_image(file_path: str) -> str:
     """
     Preprocess the image before running OCR.
     Steps:
-      1. Resize if image is too large (max dimension > 2000px)
-      2. Convert to grayscale
-      3. Increase contrast using CLAHE
-      4. Denoise using fastNlMeansDenoising
+      1. Open with Pillow to handle EXIF orientation and format conversions.
+      2. Convert to RGB mode and then to OpenCV BGR format.
+      3. Resize if image is too large (max dimension > 2000px)
+      4. Convert to grayscale
+      5. Increase contrast using CLAHE
+      6. Denoise using fastNlMeansDenoising
     Saves to a temporary file and returns its path.
     """
     import cv2
     import numpy as np
     import tempfile
+    from PIL import Image, ImageOps
     
-    # Read image
-    img = cv2.imread(file_path)
+    # Read image using PIL to handle EXIF orientation and format conversions
+    try:
+        with Image.open(file_path) as pil_img:
+            # Correct orientation based on EXIF data
+            pil_img = ImageOps.exif_transpose(pil_img)
+            # Convert to RGB mode (removes alpha channel, handles palettes)
+            pil_img = pil_img.convert("RGB")
+            # Convert to OpenCV BGR format
+            img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        print(f"PIL image loading failed: {e}. Falling back to cv2.imread.")
+        # Fallback to direct cv2 read
+        img = cv2.imread(file_path)
+        
     if img is None:
         raise TextExtractionError("Unable to read image file.")
         
@@ -174,7 +189,7 @@ def extract_text_from_image(file_path: str) -> str:
         print(f"Image preprocessing warning: {pe}")
         
     text = ""
-    easyocr_failed = False
+    easyocr_success = False
     
     # Try EasyOCR first
     try:
@@ -190,19 +205,18 @@ def extract_text_from_image(file_path: str) -> str:
             # Check average confidence
             avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
             LOW_CONFIDENCE_THRESHOLD = 0.40
-            if avg_confidence < LOW_CONFIDENCE_THRESHOLD:
-                raise TextExtractionError("Image quality too low for analysis.")
-                
-            text = "\n".join(texts)
-    except TextExtractionError:
-        # Re-raise explicit quality error
-        raise
+            if avg_confidence >= LOW_CONFIDENCE_THRESHOLD:
+                text = "\n".join(texts)
+                if text.strip():
+                    easyocr_success = True
+            else:
+                print(f"EasyOCR low confidence: {avg_confidence:.2f} < {LOW_CONFIDENCE_THRESHOLD}")
     except Exception as e:
         print(f"EasyOCR failed: {e}")
-        easyocr_failed = True
     
-    # Fallback to pytesseract if EasyOCR failed or returned empty text
-    if (easyocr_failed or not text.strip()):
+    # Fallback to pytesseract if EasyOCR failed, had low confidence, or returned empty text
+    if not easyocr_success:
+        print("[OCR] EasyOCR unavailable or low confidence. Trying pytesseract fallback...")
         try:
             from app.core.config import settings
             import pytesseract
@@ -215,6 +229,7 @@ def extract_text_from_image(file_path: str) -> str:
             img = Image.open(ocr_target_path)
             
             # Simple quality/confidence validation check for pytesseract
+            t_conf_ok = True
             try:
                 data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
                 confidences = [float(c) for c in data['conf'] if c != '-1' and c != -1]
@@ -222,22 +237,20 @@ def extract_text_from_image(file_path: str) -> str:
                     avg_confidence = sum(confidences) / (len(confidences) * 100.0) # Scale 0-100 to 0-1
                     LOW_CONFIDENCE_THRESHOLD = 0.40
                     if avg_confidence < LOW_CONFIDENCE_THRESHOLD:
-                        raise TextExtractionError("Image quality too low for analysis.")
-            except TextExtractionError:
-                raise
+                        print(f"Pytesseract low confidence: {avg_confidence:.2f} < {LOW_CONFIDENCE_THRESHOLD}")
+                        t_conf_ok = False
             except Exception as t_conf_err:
                 print(f"Pytesseract confidence check warning: {t_conf_err}")
                 
-            text = pytesseract.image_to_string(img)
-        except TextExtractionError:
-            raise
-        except ImportError as ie:
-            print("Neither EasyOCR nor pytesseract is installed. OCR unavailable.")
-            if easyocr_failed:
-                raise TextExtractionError("OCR extraction failed") from ie
+            t_text = pytesseract.image_to_string(img)
+            if t_text.strip() and t_conf_ok:
+                text = t_text
+            elif t_text.strip() and not easyocr_success:
+                # If pytesseract has low confidence but we have nothing else, keep the text
+                text = t_text
         except Exception as e:
             print(f"Pytesseract failed: {e}")
-            if easyocr_failed:
+            if not text.strip():
                 raise TextExtractionError("OCR extraction failed") from e
     
     # Clean up preprocessed file

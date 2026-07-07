@@ -269,9 +269,7 @@ async def run_ai_analysis(document_id: str):
                 raise RuntimeError("Could not connect to PostgreSQL")
         except Exception as pg_err:
             print(f"[FAIL] Failed to dual-write analysis/clauses to PostgreSQL: {pg_err}")
-            print("[HISTORY] Save failed")
-            update_document_status(db, document_id, "failed", "Database save failed")
-            return
+            print("[HISTORY] Save to PostgreSQL failed (non-fatal)")
         finally:
             if conn:
                 conn.close()
@@ -346,8 +344,8 @@ async def upload_document(
         download_url = supabase.storage.from_("legal-documents").get_public_url(remote_path)
         print("[UPLOAD] File stored")
     except Exception as e:
-        print(f"Supabase upload failed: {e}")
-        upload_error = "Supabase upload failed"
+        print(f"Supabase upload warning (non-fatal): {e}")
+        upload_error = None
         download_url = ""
         
     # Store file URL in PostgreSQL
