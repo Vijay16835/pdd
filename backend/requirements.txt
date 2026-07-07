@@ -16,10 +16,8 @@ python-docx
 reportlab
 
 pytesseract
-opencv-python-headless
-httpx
-numpy==1.26.4
 Pillow==10.4.0
+httpx
 supabase
 psycopg2-binary
 legacy-doc

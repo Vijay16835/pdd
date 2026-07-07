@@ -116,157 +116,142 @@ def extract_text_from_txt(file_path: str) -> str:
         raise TextExtractionError("Unsupported file structure") from e
 
 
-def preprocess_image(file_path: str) -> str:
+# ---------------------------------------------------------------------------
+# Tesseract Diagnostic — called once at module import and on each OCR attempt
+# ---------------------------------------------------------------------------
+def _log_tesseract_diagnostics() -> str:
     """
-    Preprocess the image before running OCR.
-    Steps:
-      1. Open with Pillow to handle EXIF orientation and format conversions.
-      2. Convert to RGB mode and then to OpenCV BGR format.
-      3. Resize if image is too large (max dimension > 2000px)
-      4. Convert to grayscale
-      5. Increase contrast using CLAHE
-      6. Denoise using fastNlMeansDenoising
-    Saves to a temporary file and returns its path.
+    Run diagnostic checks for Tesseract availability and log results.
+    Returns the resolved tesseract binary path (or empty string on failure).
     """
-    import cv2
-    import numpy as np
-    import tempfile
-    from PIL import Image, ImageOps
-    
-    # Read image using PIL to handle EXIF orientation and format conversions
+    import shutil
+    import subprocess
+    from app.core.config import settings
+
+    print("[TESS-DIAG] === Tesseract Diagnostic ===")
+
+    # 1. Check configured path
+    configured_path = settings.TESSERACT_CMD
+    exists = os.path.exists(configured_path)
+    print(f"[TESS-DIAG] settings.TESSERACT_CMD = {configured_path!r}")
+    print(f"[TESS-DIAG] os.path.exists(configured_path) = {exists}")
+
+    # 2. which tesseract
+    which_path = shutil.which("tesseract")
+    print(f"[TESS-DIAG] shutil.which('tesseract') = {which_path!r}")
+
+    # 3. tesseract --version
+    resolved_path = configured_path if exists else (which_path or "tesseract")
     try:
-        with Image.open(file_path) as pil_img:
-            # Correct orientation based on EXIF data
-            pil_img = ImageOps.exif_transpose(pil_img)
-            # Convert to RGB mode (removes alpha channel, handles palettes)
-            pil_img = pil_img.convert("RGB")
-            # Convert to OpenCV BGR format
-            img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    except Exception as e:
-        print(f"PIL image loading failed: {e}. Falling back to cv2.imread.")
-        # Fallback to direct cv2 read
-        img = cv2.imread(file_path)
-        
-    if img is None:
-        raise TextExtractionError("Unable to read image file.")
-        
-    # 1. Resize large images (keeps aspect ratio)
-    h, w = img.shape[:2]
-    max_dim = 2000
-    if max(h, w) > max_dim:
-        scale = max_dim / max(h, w)
-        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-        
-    # 2. Convert to grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # 3. Increase contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    contrast = clahe.apply(gray)
-    
-    # 4. Denoise image (milder strength to prevent smudging thin fonts)
-    denoised = cv2.fastNlMeansDenoising(contrast, None, h=3, templateWindowSize=7, searchWindowSize=21)
-    
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        temp_path = tmp.name
-        
-    cv2.imwrite(temp_path, denoised)
-    return temp_path
+        result = subprocess.run(
+            [resolved_path, "--version"],
+            capture_output=True, text=True, timeout=10
+        )
+        version_out = (result.stdout or "").strip() or (result.stderr or "").strip()
+        print(f"[TESS-DIAG] tesseract --version output: {version_out[:200]}")
+        print(f"[TESS-DIAG] return code: {result.returncode}")
+    except FileNotFoundError:
+        print(f"[TESS-DIAG] ERROR: tesseract binary not found at {resolved_path!r}")
+        resolved_path = ""
+    except Exception as diag_err:
+        print(f"[TESS-DIAG] ERROR running tesseract --version: {diag_err}")
+        resolved_path = ""
+
+    print("[TESS-DIAG] === End Diagnostic ===")
+    return resolved_path
+
+
+def preprocess_image_pillow(file_path: str):
+    """
+    Preprocess the image using Pillow only (no OpenCV dependency).
+    Steps:
+      1. Open with Pillow — handles EXIF orientation automatically.
+      2. Convert to RGB (removes alpha, handles palette modes).
+      3. Convert to grayscale (L mode) for better OCR accuracy.
+    Returns a PIL Image object ready for pytesseract.
+    """
+    from PIL import Image, ImageOps, ImageFilter
+
+    with Image.open(file_path) as pil_img:
+        # Fix EXIF orientation
+        pil_img = ImageOps.exif_transpose(pil_img)
+        # Convert to RGB first (handles RGBA, P/palette, etc.)
+        pil_img = pil_img.convert("RGB")
+        # Convert to grayscale for OCR
+        gray = pil_img.convert("L")
+        # Mild sharpening to improve character definition
+        sharpened = gray.filter(ImageFilter.SHARPEN)
+        # Return a copy so the context manager doesn't close it prematurely
+        return sharpened.copy()
 
 
 def extract_text_from_image(file_path: str) -> str:
-    """Extract text from images using OCR (EasyOCR or pytesseract) with preprocessing and confidence validation."""
+    """
+    Extract text from images using Pillow + pytesseract.
+    
+    Diagnostic flow:
+      1. Log tesseract binary availability (path, which, --version).
+      2. Preprocess image with Pillow (EXIF correction, grayscale).
+      3. Run pytesseract.image_to_string().
+      4. Log extracted text length.
+      5. If length == 0 → raise TextExtractionError (do NOT proceed to Groq).
+    """
     print("[IMAGE] Image received")
-    print("[OCR] OCR started")
-    
-    preprocessed_path = None
-    ocr_target_path = file_path
+    print("[OCR] OCR started — engine: pytesseract (Pillow preprocessing)")
+
+    # --- Step 1: Tesseract diagnostics ---
+    resolved_tess_path = _log_tesseract_diagnostics()
+
+    # --- Step 2: Configure pytesseract binary path ---
+    import pytesseract
+    from app.core.config import settings
+
+    if resolved_tess_path and os.path.exists(resolved_tess_path):
+        pytesseract.pytesseract.tesseract_cmd = resolved_tess_path
+        print(f"[OCR] pytesseract.tesseract_cmd set to: {resolved_tess_path!r}")
+    else:
+        # Let pytesseract use its own default discovery
+        print("[OCR] WARNING: tesseract_cmd not explicitly set — relying on system PATH")
+
+    # --- Step 3: Preprocess image ---
     try:
-        preprocessed_path = preprocess_image(file_path)
-        ocr_target_path = preprocessed_path
-    except Exception as pe:
-        print(f"Image preprocessing warning: {pe}")
-        
-    text = ""
-    easyocr_success = False
-    
-    # Try EasyOCR first
+        pil_img = preprocess_image_pillow(file_path)
+        print(f"[OCR] Image preprocessed: size={pil_img.size}, mode={pil_img.mode}")
+    except Exception as pre_err:
+        print(f"[OCR] Pillow preprocessing failed: {pre_err}. Using raw image.")
+        from PIL import Image
+        try:
+            pil_img = Image.open(file_path).convert("L")
+        except Exception as raw_err:
+            raise TextExtractionError(f"Cannot open image file: {raw_err}") from raw_err
+
+    # --- Step 4: Run OCR ---
     try:
-        import easyocr
-        reader = easyocr.Reader(['en'], gpu=False)
-        # detail=1 returns bounding box, text, and confidence score
-        results = reader.readtext(ocr_target_path, detail=1)
-        
-        if results:
-            confidences = [res[2] for res in results]
-            texts = [res[1] for res in results]
-            
-            # Check average confidence
-            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-            LOW_CONFIDENCE_THRESHOLD = 0.40
-            if avg_confidence >= LOW_CONFIDENCE_THRESHOLD:
-                text = "\n".join(texts)
-                if text.strip():
-                    easyocr_success = True
-            else:
-                print(f"EasyOCR low confidence: {avg_confidence:.2f} < {LOW_CONFIDENCE_THRESHOLD}")
-    except Exception as e:
-        print(f"EasyOCR failed: {e}")
-    
-    # Fallback to pytesseract if EasyOCR failed, had low confidence, or returned empty text
-    if not easyocr_success:
-        print("[OCR] EasyOCR unavailable or low confidence. Trying pytesseract fallback...")
-        try:
-            from app.core.config import settings
-            import pytesseract
-            from PIL import Image
+        extracted_text = pytesseract.image_to_string(pil_img)
+        print(f"[OCR] pytesseract.image_to_string() returned {len(extracted_text)} chars")
+    except pytesseract.TesseractNotFoundError as tnf:
+        print(f"[OCR] CRITICAL: TesseractNotFoundError — {tnf}")
+        print("[OCR] tesseract-ocr binary is NOT installed or not on PATH.")
+        print("[OCR] Ensure build.sh runs: apt-get install -y tesseract-ocr tesseract-ocr-eng")
+        raise TextExtractionError("Tesseract OCR engine not found on server.") from tnf
+    except Exception as ocr_err:
+        print(f"[OCR] pytesseract.image_to_string() raised: {ocr_err}")
+        raise TextExtractionError(f"OCR extraction failed: {ocr_err}") from ocr_err
 
-            # Set tesseract path if it exists
-            if os.path.exists(settings.TESSERACT_CMD):
-                pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+    # --- Step 5: Validate extracted text ---
+    stripped_text = extracted_text.strip()
+    print(f"[OCR] Extracted text length (stripped): {len(stripped_text)}")
 
-            img = Image.open(ocr_target_path)
+    if len(stripped_text) == 0:
+        print("[OCR] STOP: extracted_text length is 0. OCR produced no output.")
+        print("[OCR] Possible causes: blank/low-quality image, wrong language pack, Tesseract config.")
+        print("[OCR] NOT proceeding to Groq AI — fixing OCR is required first.")
+        raise TextExtractionError(
+            "No readable text found in image. OCR returned empty output."
+        )
 
-            # Confidence check
-            t_conf_ok = True
-            try:
-                data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-                confidences = [float(c) for c in data['conf'] if c != '-1' and c != -1]
-                if confidences:
-                    avg_confidence = sum(confidences) / (len(confidences) * 100.0)
-                    LOW_CONFIDENCE_THRESHOLD = 0.40
-                    if avg_confidence < LOW_CONFIDENCE_THRESHOLD:
-                        print(f"Pytesseract low confidence: {avg_confidence:.2f} < {LOW_CONFIDENCE_THRESHOLD}")
-                        t_conf_ok = False
-            except Exception as t_conf_err:
-                print(f"Pytesseract confidence check warning: {t_conf_err}")
-
-            t_text = pytesseract.image_to_string(img)
-            if t_text.strip() and t_conf_ok:
-                text = t_text
-            elif t_text.strip() and not easyocr_success:
-                # Pytesseract has low confidence but EasyOCR gave nothing — use it anyway
-                text = t_text
-        except Exception as e:
-            print(f"Pytesseract failed: {e}")
-            # Only raise if we truly have nothing from either engine
-            if not text.strip():
-                raise TextExtractionError("OCR extraction failed — no text could be extracted from the image.") from e
-    
-    # Clean up preprocessed file
-    if preprocessed_path and os.path.exists(preprocessed_path):
-        try:
-            os.remove(preprocessed_path)
-        except Exception as remove_err:
-            print(f"Failed to remove temporary preprocessed image: {remove_err}")
-            
-    stripped_text = text.strip()
-    if not stripped_text:
-        raise TextExtractionError("No readable text found in image.")
-        
-    print("[OCR] OCR completed")
-    print(f"[OCR] Extracted text length = {len(stripped_text)}")
+    print("[OCR] OCR completed successfully.")
+    print(f"[OCR] First 200 chars of extracted text: {stripped_text[:200]!r}")
     return stripped_text
 
 
