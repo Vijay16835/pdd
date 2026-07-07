@@ -221,37 +221,38 @@ def extract_text_from_image(file_path: str) -> str:
             from app.core.config import settings
             import pytesseract
             from PIL import Image
-            
+
             # Set tesseract path if it exists
             if os.path.exists(settings.TESSERACT_CMD):
                 pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
-                
+
             img = Image.open(ocr_target_path)
-            
-            # Simple quality/confidence validation check for pytesseract
+
+            # Confidence check
             t_conf_ok = True
             try:
                 data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
                 confidences = [float(c) for c in data['conf'] if c != '-1' and c != -1]
                 if confidences:
-                    avg_confidence = sum(confidences) / (len(confidences) * 100.0) # Scale 0-100 to 0-1
+                    avg_confidence = sum(confidences) / (len(confidences) * 100.0)
                     LOW_CONFIDENCE_THRESHOLD = 0.40
                     if avg_confidence < LOW_CONFIDENCE_THRESHOLD:
                         print(f"Pytesseract low confidence: {avg_confidence:.2f} < {LOW_CONFIDENCE_THRESHOLD}")
                         t_conf_ok = False
             except Exception as t_conf_err:
                 print(f"Pytesseract confidence check warning: {t_conf_err}")
-                
+
             t_text = pytesseract.image_to_string(img)
             if t_text.strip() and t_conf_ok:
                 text = t_text
             elif t_text.strip() and not easyocr_success:
-                # If pytesseract has low confidence but we have nothing else, keep the text
+                # Pytesseract has low confidence but EasyOCR gave nothing — use it anyway
                 text = t_text
         except Exception as e:
             print(f"Pytesseract failed: {e}")
+            # Only raise if we truly have nothing from either engine
             if not text.strip():
-                raise TextExtractionError("OCR extraction failed") from e
+                raise TextExtractionError("OCR extraction failed — no text could be extracted from the image.") from e
     
     # Clean up preprocessed file
     if preprocessed_path and os.path.exists(preprocessed_path):

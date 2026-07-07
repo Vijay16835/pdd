@@ -16,8 +16,10 @@ python-docx
 reportlab
 
 pytesseract
+easyocr
+opencv-python-headless
 httpx
-numpy==1.26.4
+numpy
 Pillow==10.4.0
 supabase
 psycopg2-binary
